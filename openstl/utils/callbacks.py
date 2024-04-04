@@ -2,7 +2,7 @@ import json
 import shutil
 import logging
 import os.path as osp
-from pytorch_lightning.callbacks import Callback, ModelCheckpoint
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from .main_utils import check_dir, collect_env, print_log, output_namespace
 
 
