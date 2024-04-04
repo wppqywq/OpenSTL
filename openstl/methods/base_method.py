@@ -1,13 +1,13 @@
 import numpy as np
 import torch.nn as nn
 import os.path as osp
-import pytorch_lightning as pl
+import lightning as l
 from openstl.utils import print_log, check_dir
 from openstl.core import get_optim_scheduler
 from openstl.core import metric
 
 
-class Base_method(pl.LightningModule):
+class Base_method(l.LightningModule):
 
     def __init__(self, **args):
         super().__init__()
