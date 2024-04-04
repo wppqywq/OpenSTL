@@ -12,8 +12,8 @@ from openstl.datasets import BaseDataModule
 from openstl.utils import (get_dataset, measure_throughput, SetupCallback, EpochEndCallback, BestCheckpointCallback)
 
 import argparse
-from pytorch_lightning import seed_everything, Trainer
-import pytorch_lightning.callbacks as plc
+from lightning import seed_everything, Trainer
+import lightning.pytorch.callbacks as lc
 
 
 class BaseExperiment(object):
@@ -77,7 +77,7 @@ class BaseExperiment(object):
 
         callbacks = [setup_callback, ckpt_callback, epochend_callback]
         if args.sched:
-            callbacks.append(plc.LearningRateMonitor(logging_interval=None))
+            callbacks.append(lc.LearningRateMonitor(logging_interval=None))
         return callbacks, save_dir
 
     def _get_data(self, dataloaders=None):

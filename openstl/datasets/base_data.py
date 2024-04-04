@@ -1,7 +1,7 @@
-import pytorch_lightning as pl
+import lightning as l
 
 
-class BaseDataModule(pl.LightningDataModule):
+class BaseDataModule(l.LightningDataModule):
     def __init__(self, train_loader, valid_loader, test_loader):
         super().__init__()
         self.train_loader = train_loader
