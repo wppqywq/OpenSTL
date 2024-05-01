@@ -92,7 +92,7 @@ class BaseExperiment(object):
         return BaseDataModule(train_loader, vali_loader, test_loader)
 
     def train(self):
-        self.trainer.fit(self.method, self.data)
+        self.trainer.fit(self.method, self.data, ckpt_path=self.args.ckpt_path if self.args.ckpt_path else None)
 
     def test(self):
         if self.args.test == True:
