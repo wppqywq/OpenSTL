@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from openstl.models import PredRNN_Model
 from openstl.utils import (reshape_patch, reshape_patch_back,
                            reserve_schedule_sampling_exp, schedule_sampling)

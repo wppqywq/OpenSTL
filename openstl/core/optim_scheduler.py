@@ -19,6 +19,11 @@ from timm.scheduler.tanh_lr import TanhLRScheduler
 from .optim_constant import optim_parameters
 
 
+timm_schedulers = [
+    CosineLRScheduler, MultiStepLRScheduler, StepLRScheduler, TanhLRScheduler
+]
+
+
 def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None):
     parameter_group_names = {}
     parameter_group_vars = {}
