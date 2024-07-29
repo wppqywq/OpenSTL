@@ -17,5 +17,5 @@ scikit-learn
 timm
 tqdm
 xarray
-pytorch-lightning
+lightning==2.2.1
 PyWavelets
