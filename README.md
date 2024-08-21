@@ -257,7 +257,6 @@ If you are interested in our repository or our paper, please cite the following 
   booktitle={Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
   year={2023}
 }
-
 @inproceedings{gao2022simvp,
   title={Simvp: Simpler yet better video prediction},
   author={Gao, Zhangyang and Tan, Cheng and Wu, Lirong and Li, Stan Z},
