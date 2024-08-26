@@ -108,7 +108,7 @@ dataset_parameters = {
         'idx_in': [1+i*6 for i in range(-3, 0)] + [0,],
         'idx_out': [i*6 + 1 for i in range(28)],
         'step': 6,
-        'level': [150, 500, 850],
+        'levels': [150, 500, 850],
         'metrics': ['mse', 'rmse', 'mae'],
     },
     'weather_mv_4_4_s6_5_625': {  # multi-variant weather bench, 4->4 (1 day)
@@ -121,7 +121,7 @@ dataset_parameters = {
         'idx_in': [1+i*6 for i in range(-3, 0)] + [0,],
         'idx_out': [i*6 + 1 for i in range(4)],
         'step': 6,
-        'level': [150, 500, 850],
+        'levels': [150, 500, 850],
         'metrics': ['mse', 'rmse', 'mae'],
     },
     'weather_r_5_625': {  # relative_humidity
