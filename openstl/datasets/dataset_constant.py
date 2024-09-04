@@ -130,6 +130,7 @@ dataset_parameters = {
         'aft_seq_length': 12,
         'total_length': 24,
         'data_name': 'r',
+        'levels': [1000,],
         'train_time': ['2010', '2015'], 'val_time': ['2016', '2016'], 'test_time': ['2017', '2018'],
         'metrics': ['mse', 'rmse', 'mae'],
     },
