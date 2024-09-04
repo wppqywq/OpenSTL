@@ -83,7 +83,7 @@ class WeatherBenchDataset(Dataset):
         idx_in (list): The list of input indices.
         idx_out (list): The list of output indices to predict.
         step (int): Sampling step in the time dimension.
-        level (int|list|"all"): Level(s) to use.
+        levels (int|list|"all"): Level(s) to use.
         data_split (str): The resolution (degree) of Wheather Bench splits.
         use_augment (bool): Whether to use augmentations (defaults to False).
     """
@@ -280,7 +280,7 @@ if __name__ == '__main__':
     # data_name = 'mv'
 
     for _split in data_split:
-        step, level = 24, [150, 500, 850]
+        step, levels = 24, [150, 500, 850]
         dataloader_train, _, dataloader_test = \
             load_data(batch_size=128,
                     val_batch_size=32,
@@ -292,7 +292,7 @@ if __name__ == '__main__':
                     test_time=['2017', '2018'],
                     idx_in=[-11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0],
                     idx_out=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                    step=step, level=level, use_augment=True)
+                    step=step, levels=levels, use_augment=True)
 
         print(len(dataloader_train), len(dataloader_test))
         for item in dataloader_train:
