@@ -1,0 +1,26 @@
+/localscratch/spool/slurmd/job63189105/slurm_script: line 13: /scratch/yyyang/proj_simvp/OpenSTL/openstl_env/bin/activate: No such file or directory
+/localscratch/spool/slurmd/job63189105/slurm_script: line 15: cd: /scratch/yyyang/proj_simvp/OpenSTL/OpenSTL: No such file or directory
+Created symlink to data directory
+=== Checking data path ===
+ls: cannot access './data/moving_mnist/': No such file or directory
+=== Available configs ===
+SimVP-L.py
+SimVP_ConvMixer.py
+SimVP_ConvNeXt.py
+SimVP_HorNet.py
+SimVP_IncepU.py
+SimVP_MLPMixer.py
+SimVP_MogaNet.py
+SimVP_Poolformer.py
+SimVP_Swin.py
+SimVP_Uniformer.py
+SimVP_VAN.py
+SimVP_ViT.py
+SimVP_gSTA-L.py
+SimVP_gSTA.py
+=== Starting Training ===
+Traceback (most recent call last):
+  File "/scratch/yyyang/proj_simvp/OpenSTL/tools/train.py", line 7, in <module>
+    from openstl.api import BaseExperiment
+ModuleNotFoundError: No module named 'openstl'
+=== Training Completed ===
