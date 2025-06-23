@@ -3,10 +3,10 @@ from openstl.models import MMVP_Model
 from .base_method import Base_method 
 
 class MMVP(Base_method):
-    r"""SimVP
+    r"""MMVP
 
-    Implementation of `SimVP: Simpler yet Better Video Prediction
-    <https://arxiv.org/abs/2206.05099>`_.
+    Implementation of `MMVP: Motion-Matrix-based Video Prediction
+    <https://arxiv.org/abs/2308.16154>`_.
 
     """
     
