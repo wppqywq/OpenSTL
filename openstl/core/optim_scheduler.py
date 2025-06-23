@@ -5,9 +5,19 @@ from timm.optim.adafactor import Adafactor
 from timm.optim.adahessian import Adahessian
 from timm.optim.adamp import AdamP
 from timm.optim.lookahead import Lookahead
-from timm.optim.nadam import Nadam
+
+#from timm.optim.nadam import Nadam
+# update to a later version of timm (timm-1.0.15)
+# which supports Nadam and 'timm.layers' and timm.optim.radam' 
+from torch.optim import Adam
+Nadam = Adam
+
 from timm.optim.nvnovograd import NvNovoGrad
-from timm.optim.radam import RAdam
+
+# from timm.optim.radam import RAdam
+import torch_optimizer as optim
+RAdam = optim.RAdam
+
 from timm.optim.rmsprop_tf import RMSpropTF
 from timm.optim.sgdp import SGDP
 

@@ -1,5 +1,5 @@
 dask
-decord
+# decord
 future
 einops
 fvcore

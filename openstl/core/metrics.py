@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import torch
+from .eyetrack_metrics import evaluate_eyetrack_metrics
 
 try:
     import lpips
@@ -168,7 +169,7 @@ class LPIPS(torch.nn.Module):
 
 def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
            clip_range=[0, 1], channel_names=None,
-           spatial_norm=False, return_log=True, threshold=74.0):
+           spatial_norm=False, return_log=True, threshold=74.0, is_eyetrack=False):
     """The evaluation function to output metrics.
 
     Args:
@@ -273,6 +274,12 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
             for f in range(pred.shape[1]):
                 lpips += cal_lpips(pred[b, f], true[b, f])
         eval_res['lpips'] = lpips / (pred.shape[0] * pred.shape[1])
+
+    # Add eyetrack specific metrics
+    if is_eyetrack:
+        eyetrack_metrics = ['scanpath_sim', 'fixation_acc', 'dtw']
+        eyetrack_eval = evaluate_eyetrack_metrics(pred, true, eyetrack_metrics)
+        eval_res.update(eyetrack_eval)
 
     if return_log:
         for k, v in eval_res.items():

@@ -13,8 +13,10 @@ from .pipelines import *
 from .utils import create_loader
 from .base_data import BaseDataModule
 
+from .dataloader_coco_search import COCOSearchDataset
+
 __all__ = [
     'KittiCaltechDataset', 'HumanDataset', 'KTHDataset', 'MovingMNIST', 'TaxibjDataset',
     'WeatherBenchDataset', 'SEVIRDataset'
-    'load_data', 'dataset_parameters', 'create_loader', 'BaseDataModule'
+    'load_data', 'dataset_parameters', 'create_loader', 'BaseDataModule', 'COCOSearchDataset'
 ]
