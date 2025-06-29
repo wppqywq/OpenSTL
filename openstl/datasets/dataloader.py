@@ -17,7 +17,7 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
     
     elif dataname == 'coco_search':
         from .dataloader_coco_search import load_data
-        return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+        return load_data(batch_size, val_batch_size, data_root, num_workers, distributed=dist, **kwargs)
 
     elif dataname == 'human':
         from .dataloader_human import load_data
