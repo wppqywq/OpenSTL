@@ -14,6 +14,8 @@ from .mmvp import MMVP
 from .swinlstm import SwinLSTM_D, SwinLSTM_B
 from .wast import WaST
 
+from .simvp_groupnorm_method import SimVP_GroupNorm
+
 method_maps = {
     'convlstm': ConvLSTM,
     'e3dlstm': E3DLSTM,
@@ -29,11 +31,14 @@ method_maps = {
     'swinlstm_d': SwinLSTM_D,
     'swinlstm_b': SwinLSTM_B,
     'swinlstm': SwinLSTM_B,
-    'wast': WaST
+    'wast': WaST,
+    'simvp_groupnorm': SimVP_GroupNorm,
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'E3DLSTM', 'MAU', 'MIM',
     'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'SimVP', 'TAU',
-    "MMVP", 'SwinLSTM_D', 'SwinLSTM_B', 'WaST'
+    "MMVP", 'SwinLSTM_D', 'SwinLSTM_B', 'WaST', 'SimVP_GroupNorm'
 ]
+from .simvp_groupnorm_method import SimVP_GroupNorm
+method_maps['simvp_groupnorm'] = SimVP_GroupNorm

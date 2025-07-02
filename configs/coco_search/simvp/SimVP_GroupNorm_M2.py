@@ -5,7 +5,7 @@ This should resolve the channel mismatch issues.
 """
 
 method = 'SimVP_GroupNorm'  # Use our custom GroupNorm method
-
+no_display_method_info = True
 # Dataset parameters - using short sequences that actually exist
 dataname = 'coco_search'
 data_root = './data/coco_search18_tp/processed'  # Keep original path
