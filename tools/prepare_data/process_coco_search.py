@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """
-Process COCO-Search18 TP dataset for eye tracking prediction
-Handles both coordinate sequences and background image associations
+Fixed COCO-Search18 processor with correct image-trial mapping
 """
 
 import os
@@ -14,8 +13,8 @@ import argparse
 from tqdm import tqdm
 
 
-class COCOSearchProcessor:
-    """Process COCO-Search18 Target Present (TP) data"""
+class FixedCOCOSearchProcessor:
+    """Fixed processor with proper image-trial mapping"""
     
     def __init__(self, data_root):
         self.data_root = Path(data_root)
@@ -24,11 +23,103 @@ class COCOSearchProcessor:
         self.processed_dir = self.data_root / 'processed'
         self.processed_dir.mkdir(exist_ok=True)
         
-    def load_fixations(self, split='train'):
-        """Load fixation data from JSON files"""
+        # Create proper image mapping first
+        self.image_id_to_path = self._create_image_mapping()
+        
+    def _create_image_mapping(self):
+        """Create mapping from image IDs to file paths"""
+        mapping = {}
+        
+        if not self.images_dir.exists():
+            print(f"Warning: Images directory not found: {self.images_dir}")
+            return mapping
+            
+        for category_dir in self.images_dir.iterdir():
+            if category_dir.is_dir():
+                for img_file in category_dir.glob('*.jpg'):
+                    # Extract various possible ID formats
+                    img_name = img_file.stem
+                    
+                    # Store multiple formats
+                    mapping[img_name] = img_file
+                    mapping[img_name.lower()] = img_file
+                    
+                    # Try with category prefix
+                    full_name = f"{category_dir.name}_{img_name}"
+                    mapping[full_name] = img_file
+                    mapping[full_name.lower()] = img_file
+                    
+                    # Try COCO format variations
+                    if img_name.isdigit():
+                        # Pad with zeros (common COCO format)
+                        for pad_len in [6, 12]:
+                            padded = img_name.zfill(pad_len)
+                            mapping[padded] = img_file
+                            mapping[f"COCO_train2014_{padded}"] = img_file
+                            mapping[f"COCO_val2014_{padded}"] = img_file
+        
+        print(f"Created image mapping with {len(mapping)} entries")
+        return mapping
+    
+    def _extract_image_id_from_trial(self, trial):
+        """Extract image ID from trial data using multiple strategies"""
+        
+        # Strategy 1: Direct image ID fields
+        for field in ['image_id', 'img_id', 'imgid', 'imageid']:
+            if field in trial and trial[field]:
+                return str(trial[field])
+        
+        # Strategy 2: Name/filename fields
+        for field in ['name', 'imagename', 'img_name', 'filename', 'stimulus']:
+            if field in trial and trial[field]:
+                value = str(trial[field])
+                # Extract filename from path
+                if '/' in value:
+                    value = value.split('/')[-1]
+                if '.' in value:
+                    value = value.split('.')[0]
+                return value
+        
+        # Strategy 3: Task field might contain image info
+        if 'task' in trial and isinstance(trial['task'], str):
+            task = trial['task']
+            # Check if task contains image ID
+            if any(c.isdigit() for c in task):
+                return task
+        
+        # Strategy 4: Check for any numeric fields
+        for key, value in trial.items():
+            if isinstance(value, (int, str)) and str(value).isdigit():
+                if len(str(value)) >= 4:  # Reasonable image ID length
+                    return str(value)
+        
+        return None
+    
+    def _find_image_path(self, image_id):
+        """Find actual image path for given ID"""
+        if not image_id:
+            return None
+            
+        # Try exact match first
+        if image_id in self.image_id_to_path:
+            return self.image_id_to_path[image_id]
+        
+        # Try lowercase
+        if image_id.lower() in self.image_id_to_path:
+            return self.image_id_to_path[image_id.lower()]
+        
+        # Try partial matches
+        for mapped_id, path in self.image_id_to_path.items():
+            if image_id in mapped_id or mapped_id in image_id:
+                return path
+        
+        return None
+    
+    def load_and_validate_fixations(self, split='train'):
+        """Load fixations and validate image mapping"""
         fixations_data = []
         
-        # Load all split files
+        # Load split files
         for split_num in [1, 2]:
             if split == 'train':
                 filename = f'coco_search18_fixations_TP_train_split{split_num}.json'
@@ -42,113 +133,137 @@ class COCOSearchProcessor:
                     fixations_data.extend(data)
                 print(f"Loaded {len(data)} trials from {filename}")
         
+        # Validate image mapping
+        mapped_count = 0
+        for trial in fixations_data[:100]:  # Check first 100
+            image_id = self._extract_image_id_from_trial(trial)
+            image_path = self._find_image_path(image_id)
+            if image_path and image_path.exists():
+                mapped_count += 1
+        
+        mapping_rate = mapped_count / min(100, len(fixations_data))
+        print(f"Image mapping validation: {mapping_rate:.1%} success rate")
+        
+        if mapping_rate < 0.3:
+            print("WARNING: Low image mapping rate. Checking trial structure...")
+            self._debug_trial_structure(fixations_data[:5])
+        
         return fixations_data
     
-    def extract_sequences(self, fixations_data, min_length=10, max_length=20):
-        """Extract coordinate sequences from fixation data"""
+    def _debug_trial_structure(self, sample_trials):
+        """Debug trial structure to find correct image ID field"""
+        print("\nDEBUGGING TRIAL STRUCTURE:")
+        print("=" * 50)
+        
+        for i, trial in enumerate(sample_trials):
+            print(f"\nTrial {i}:")
+            for key, value in trial.items():
+                if any(term in key.lower() for term in ['image', 'img', 'name', 'file', 'id', 'stim']):
+                    print(f"  {key}: {value}")
+            
+            # Show all string/numeric fields that might be image IDs
+            potential_ids = []
+            for key, value in trial.items():
+                if isinstance(value, (str, int)):
+                    val_str = str(value)
+                    if len(val_str) >= 4 and (val_str.isdigit() or any(c.isdigit() for c in val_str)):
+                        potential_ids.append(f"{key}: {value}")
+            
+            if potential_ids:
+                print("  Potential image IDs:")
+                for pid in potential_ids:
+                    print(f"    {pid}")
+    
+    def extract_sequences_with_validation(self, fixations_data, min_length=5, max_length=10):
+        """Extract sequences with image validation"""
         sequences = []
         metadata = []
+        valid_mapping_count = 0
         
-        for trial in tqdm(fixations_data, desc="Processing trials"):
-            # Extract fixation coordinates
+        # Get display resolution from first trial if available
+        display_width = 1920
+        display_height = 1080
+        
+        if fixations_data and 'screen_width' in fixations_data[0]:
+            display_width = fixations_data[0]['screen_width']
+            display_height = fixations_data[0]['screen_height']
+            print(f"Using display resolution: {display_width}x{display_height}")
+        
+        for trial in tqdm(fixations_data, desc="Processing trials with validation"):
+            # Extract coordinates
             X = trial.get('X', [])
             Y = trial.get('Y', [])
             
             if len(X) < min_length or len(X) != len(Y):
                 continue
             
-            # Normalize coordinates (assuming 1920x1080 resolution)
-            img_width = 1920
-            img_height = 1080
+            # Find corresponding image
+            image_id = self._extract_image_id_from_trial(trial)
+            image_path = self._find_image_path(image_id)
             
-            coords = np.array([(x/img_width, y/img_height) for x, y in zip(X, Y)])
+            # Skip trials without valid images for now
+            if not image_path or not image_path.exists():
+                continue
             
-            # Clip to valid range
+            valid_mapping_count += 1
+            
+            # Normalize coordinates
+            coords = np.array([(x/display_width, y/display_height) for x, y in zip(X, Y)])
             coords = np.clip(coords, 0, 1)
             
-            # Truncate or pad to max_length
+            # Adjust length
             if len(coords) > max_length:
                 coords = coords[:max_length]
             elif len(coords) < max_length:
-                # Pad with last coordinate
+                # Repeat last coordinate
                 padding = np.tile(coords[-1], (max_length - len(coords), 1))
                 coords = np.vstack([coords, padding])
             
             sequences.append(coords)
             
-            # Store metadata - check various possible field names
-            # COCO-Search18 might use different field names
-            image_id = trial.get('image_id') or trial.get('name') or trial.get('imagename') or 'unknown'
-            
-            # Extract numeric image ID if it's in a path format
-            if isinstance(image_id, str) and '/' in image_id:
-                image_id = image_id.split('/')[-1].split('.')[0]
-            
+            # Store validated metadata
             meta = {
                 'subject': trial.get('subject', 'unknown'),
-                'target_name': trial.get('task') or trial.get('target_name') or trial.get('target_object') or 'unknown',
+                'target_name': trial.get('task', trial.get('target_name', 'unknown')),
                 'image_id': image_id,
-                'target_found': trial.get('correct') if 'correct' in trial else trial.get('target_found', False),
+                'image_path': str(image_path.relative_to(self.data_root)),
+                'target_found': trial.get('correct', trial.get('target_found', False)),
                 'original_length': len(X),
-                'dataset': trial.get('dataset', 'coco_search18'),
-                'condition': trial.get('condition', 'TP')  # Target Present
+                'display_resolution': f"{display_width}x{display_height}"
             }
             metadata.append(meta)
         
+        print(f"Successfully mapped {valid_mapping_count} trials to images")
+        print(f"Processed {len(sequences)} valid sequences")
+        
         return np.array(sequences), metadata
     
-    def create_image_mapping(self):
-        """Create mapping between image IDs and file paths"""
-        image_mapping = {}
-        
-        for category_dir in self.images_dir.iterdir():
-            if category_dir.is_dir():
-                category = category_dir.name
-                for img_file in category_dir.glob('*.jpg'):
-                    # Extract image ID from filename
-                    img_id = img_file.stem  # Remove .jpg extension
-                    image_mapping[img_id] = {
-                        'path': str(img_file.relative_to(self.data_root)),
-                        'category': category
-                    }
-        
-        # Save mapping
-        mapping_path = self.processed_dir / 'image_mapping.json'
-        with open(mapping_path, 'w') as f:
-            json.dump(image_mapping, f, indent=2)
-        
-        print(f"Created image mapping with {len(image_mapping)} images")
-        return image_mapping
-    
-    def process_dataset(self, config_name='standard'):
-        """Process dataset with different configurations"""
+    def process_with_validation(self, config_name='short'):
+        """Process dataset with image validation"""
         configs = {
-            'standard': {'min_length': 10, 'max_length': 20},
-            'short': {'min_length': 10, 'max_length': 10},
-            'medium': {'min_length': 15, 'max_length': 30},
-            'success_only': {'min_length': 10, 'max_length': 20, 'filter_success': True}
+            'short': {'min_length': 6, 'max_length': 10},
+            'standard': {'min_length': 10, 'max_length': 15},
+            'medium': {'min_length': 15, 'max_length': 40}
         }
         
-        config = configs.get(config_name, configs['standard'])
+        config = configs.get(config_name, configs['short'])
         
-        # Process train and validation sets
         for split in ['train', 'val']:
             print(f"\nProcessing {split} set with {config_name} config...")
             
-            # Load fixations
-            fixations = self.load_fixations('train' if split == 'train' else 'validation')
+            # Load and validate fixations
+            fixations = self.load_and_validate_fixations('train' if split == 'train' else 'validation')
             
-            # Filter for success only if specified
-            if config.get('filter_success', False):
-                fixations = [f for f in fixations if f.get('target_found', False)]
-                print(f"Filtered to {len(fixations)} successful trials")
-            
-            # Extract sequences
-            sequences, metadata = self.extract_sequences(
+            # Extract sequences with validation
+            sequences, metadata = self.extract_sequences_with_validation(
                 fixations,
                 min_length=config['min_length'],
                 max_length=config['max_length']
             )
+            
+            if len(sequences) == 0:
+                print(f"ERROR: No valid sequences found for {split}")
+                continue
             
             # Save processed data
             prefix = f"{config_name}_" if config_name != 'standard' else ''
@@ -158,113 +273,80 @@ class COCOSearchProcessor:
             with open(self.processed_dir / f'{prefix}{split}_metadata.json', 'w') as f:
                 json.dump(metadata, f, indent=2)
             
-            print(f"Saved {len(sequences)} sequences for {split} set")
-        
-        # Save config
-        with open(self.processed_dir / f'{config_name}_config.json', 'w') as f:
-            json.dump(config, f, indent=2)
-    
-    def compute_statistics(self):
-        """Compute dataset statistics"""
-        stats = {}
-        
-        for config in ['standard', 'short', 'medium', 'success_only']:
-            config_stats = {}
+            print(f"Saved {len(sequences)} validated sequences for {split} set")
             
-            for split in ['train', 'val']:
-                prefix = f"{config}_" if config != 'standard' else ''
-                seq_file = self.processed_dir / f'{prefix}{split}_sequences.npy'
+            # Create validation plot
+            self._create_validation_plot(sequences[:6], metadata[:6], f"{config_name}_{split}")
+    
+    def _create_validation_plot(self, sequences, metadata, name):
+        """Create validation plot with correct image backgrounds"""
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        axes = axes.flatten()
+        
+        for i, (seq, meta) in enumerate(zip(sequences, metadata)):
+            if i >= 6:
+                break
                 
-                if seq_file.exists():
-                    sequences = np.load(seq_file)
-                    
-                    # Check if we have valid sequences
-                    if len(sequences) > 0 and sequences.ndim == 3:
-                        # Compute statistics
-                        config_stats[split] = {
-                            'num_sequences': len(sequences),
-                            'sequence_shape': sequences.shape,
-                            'mean_x': float(np.mean(sequences[:, :, 0])),
-                            'mean_y': float(np.mean(sequences[:, :, 1])),
-                            'std_x': float(np.std(sequences[:, :, 0])),
-                            'std_y': float(np.std(sequences[:, :, 1]))
-                        }
-                    else:
-                        config_stats[split] = {
-                            'num_sequences': 0,
-                            'sequence_shape': sequences.shape if len(sequences) > 0 else (0,),
-                            'mean_x': 0.0,
-                            'mean_y': 0.0,
-                            'std_x': 0.0,
-                            'std_y': 0.0
-                        }
-                        print(f"Warning: No valid sequences for {config} {split}")
+            ax = axes[i]
             
-            if config_stats:
-                stats[config] = config_stats
+            # Load and display background image
+            image_path = self.data_root / meta['image_path']
+            if image_path.exists():
+                img = Image.open(image_path)
+                ax.imshow(img)
+                
+                # Convert coordinates to image space
+                img_w, img_h = img.size
+                x_coords = seq[:, 0] * img_w
+                y_coords = seq[:, 1] * img_h
+                
+                # Plot scanpath
+                ax.plot(x_coords, y_coords, 'r-', linewidth=3, alpha=0.9)
+                ax.scatter(x_coords, y_coords, c='red', s=50, alpha=0.8, 
+                          edgecolors='white', linewidth=2)
+                ax.scatter(x_coords[0], y_coords[0], c='green', s=80, 
+                          marker='s', label='Start')
+                ax.scatter(x_coords[-1], y_coords[-1], c='blue', s=80, 
+                          marker='*', label='End')
+                
+                title = f"VALIDATED - Target: {meta['target_name']}"
+                ax.set_title(title, color='green', fontweight='bold', fontsize=10)
+            else:
+                ax.text(0.5, 0.5, f"Image not found:\n{meta['image_path']}", 
+                       ha='center', va='center', transform=ax.transAxes)
+                ax.set_title(f"Missing image", color='red')
+            
+            ax.axis('off')
+            if i == 0:
+                ax.legend()
         
-        # Save statistics
-        with open(self.processed_dir / 'data_statistics.json', 'w') as f:
-            json.dump(stats, f, indent=2)
-        
-        return stats
-    
-    def create_compatibility_links(self):
-        """Create symbolic links for OpenSTL compatibility"""
-        # Use short sequences as default
-        train_src = self.processed_dir / 'short_train_sequences.npy'
-        val_src = self.processed_dir / 'short_val_sequences.npy'
-        
-        train_dst = self.processed_dir / 'coco_search_train.npy'
-        val_dst = self.processed_dir / 'coco_search_val.npy'
-        
-        # Copy files for compatibility
-        if train_src.exists():
-            np.save(train_dst, np.load(train_src))
-            print(f"Created {train_dst}")
-        
-        if val_src.exists():
-            np.save(val_dst, np.load(val_src))
-            print(f"Created {val_dst}")
+        plt.tight_layout()
+        output_path = self.processed_dir / f'validated_{name}.png'
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"Validation plot saved: {output_path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Process COCO-Search18 data')
+    parser = argparse.ArgumentParser(description='Fixed COCO-Search18 processor')
     parser.add_argument('--data_root', type=str, 
                        default='./data/coco_search18_tp',
                        help='Root directory of COCO-Search18 data')
     parser.add_argument('--configs', nargs='+', 
-                       default=['standard', 'short', 'medium', 'success_only'],
+                       default=['short'],
                        help='Configurations to process')
     
     args = parser.parse_args()
     
-    processor = COCOSearchProcessor(args.data_root)
-    
-    # Create image mapping
-    print("Creating image mapping...")
-    processor.create_image_mapping()
+    processor = FixedCOCOSearchProcessor(args.data_root)
     
     # Process each configuration
     for config in args.configs:
-        processor.process_dataset(config)
+        print(f"\n{'='*60}")
+        print(f"PROCESSING {config.upper()} CONFIG")
+        print(f"{'='*60}")
+        processor.process_with_validation(config)
     
-    # Compute statistics
-    print("\nComputing statistics...")
-    stats = processor.compute_statistics()
-    
-    # Create compatibility links
-    print("\nCreating compatibility links...")
-    processor.create_compatibility_links()
-    
-    print("\nProcessing complete!")
-    
-    # Print summary
-    print("\nDataset Statistics:")
-    for config, config_stats in stats.items():
-        print(f"\n{config.upper()}:")
-        for split, split_stats in config_stats.items():
-            print(f"  {split}: {split_stats['num_sequences']} sequences")
+    print(f"\nFixed processing complete!")
 
 
 if __name__ == '__main__':
