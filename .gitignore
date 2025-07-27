@@ -2,6 +2,35 @@
 __pycache__/
 *.py[cod]
 *$py.class
+**/*.pt
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.bmp
+**/*.tiff
+**/*.webp
+**/*.ico
+**/*.svg
+**/*.pdf
+**/*.docx
+**/*.doc
+**/*.xls
+**/*.xlsx
+**/*.pptx
+**/*.ppt
+**/*.txt
+**/*.csv
+**/*.json
+**/*.yaml
+**/*.yml
+**/*.html
+**/*.css
+**/*.js
+**/*.ts
+**/*.tsx
+**/*.jsx
+**/*.tsx
 
 # C extensions
 *.so
