@@ -2,6 +2,35 @@
 __pycache__/
 *.py[cod]
 *$py.class
+**/*.pt
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.bmp
+**/*.tiff
+**/*.webp
+**/*.ico
+**/*.svg
+**/*.pdf
+**/*.docx
+**/*.doc
+**/*.xls
+**/*.xlsx
+**/*.pptx
+**/*.ppt
+**/*.txt
+**/*.csv
+**/*.json
+**/*.yaml
+**/*.yml
+**/*.html
+**/*.css
+**/*.js
+**/*.ts
+**/*.tsx
+**/*.jsx
+**/*.tsx
 
 # C extensions
 *.so
@@ -128,14 +157,29 @@ lightning_logs/
 *.swp
 .DS_Store
 *.json
+!.runpod/*.json
+
 
 results
 figs
 .vscode
 .ipynb_checkpoints
 
-# temp
-configs_test/
-api/test.py
-configs/kinetics/simvp
-configs/bair/simvp
+
+
+
+# Experiments directory specific ignores
+experiments/**/logs/
+experiments/**/models/
+experiments/**/data/
+experiments/**/data_patterns/
+experiments/**/datasets/
+experiments/**/results/
+experiments/**/*.log
+experiments/**/*.pkl
+experiments/**/*.npy
+experiments/**/*.h5
+experiments/**/*.hdf5
+experiments/**/*.ckpt
+experiments/**/*.pth
+experiments/**/*.pt

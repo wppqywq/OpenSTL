@@ -1,0 +1,68 @@
+{
+  "tests": [
+    {
+      "name": "simvp_mmnist_quick_test",
+      "input": {
+        "METHOD": "simvp",
+        "DATASET": "mmnist",
+        "EPOCHS": "2",
+        "LEARNING_RATE": "1e-3",
+        "BATCH_SIZE": "4",
+        "EXPERIMENT_NAME": "test_simvp_mmnist",
+        "MODE": "train"
+      },
+      "timeout": 300000
+    },
+    {
+      "name": "convlstm_mmnist_test",
+      "input": {
+        "METHOD": "convlstm",
+        "DATASET": "mmnist",
+        "EPOCHS": "1",
+        "LEARNING_RATE": "1e-3",
+        "BATCH_SIZE": "4",
+        "EXPERIMENT_NAME": "test_convlstm_mmnist",
+        "MODE": "train"
+      },
+      "timeout": 300000
+    },
+    {
+      "name": "inference_only_test",
+      "input": {
+        "METHOD": "simvp",
+        "DATASET": "mmnist",
+        "EPOCHS": "0",
+        "LEARNING_RATE": "1e-3",
+        "BATCH_SIZE": "4",
+        "EXPERIMENT_NAME": "test_inference",
+        "MODE": "test"
+      },
+      "timeout": 180000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "PYTHONPATH",
+        "value": "/workspace"
+      },
+      {
+        "key": "CUDA_VISIBLE_DEVICES", 
+        "value": "0"
+      }
+    ],
+    "allowedCudaVersions": [
+      "12.7",
+      "12.6",
+      "12.5",
+      "12.4",
+      "12.3",
+      "12.2",
+      "12.1",
+      "12.0",
+      "11.8"
+    ]
+  }
+} 
