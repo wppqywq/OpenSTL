@@ -60,7 +60,8 @@ def parse_args():
     if args.device is None:
         if torch.cuda.is_available():
             args.device = 'cuda'
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        elif (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() 
+              and sys.platform == 'darwin'):
             args.device = 'mps'
         else:
             args.device = 'cpu'
@@ -102,6 +103,10 @@ def load_checkpoint(checkpoint_path, device):
             N_T=args.N_T,
             model_type=args.model_type
         )
+    elif args.model == 'transformer':
+        # Add support for transformer models if needed
+        # model = create_transformer_model(...)
+        raise NotImplementedError(f"Model type '{args.model}' not yet implemented in evaluation")
     else:
         raise ValueError(f"Unknown model: {args.model}")
     
@@ -198,15 +203,15 @@ def prepare_batch_for_task(batch, args, device):
                 if target_mask[b, t]:
                     target_displacements[b, t] = target_coords[b, t] - last_valid_coords[b]
         
-        # Create target tensor (only for the first valid displacement)
-        target_tensor = torch.zeros(target_coords.shape[0], 2, device=device)
-        for b in range(target_coords.shape[0]):
-            valid_indices = torch.where(target_mask[b])[0]
-            if len(valid_indices) > 0:
-                target_tensor[b] = target_displacements[b, valid_indices[0]]
+        # Create target tensor (only for the first valid displacement) - vectorized
+        first_valid = (target_mask.float().cumsum(1) == 1)  # (B,T)
+        target_tensor = (first_valid.unsqueeze(-1) * target_displacements).sum(1)
         
-        # Use input frames for the model input
-        input_tensor = create_sparse_representation(input_coords, input_mask, args.img_size).to(device)
+        # Use input coordinate tensor directly (should match training input format)
+        # If training used sparse frames, uncomment the line below:
+        # input_tensor = create_sparse_representation(input_coords, input_mask, args.img_size).to(device)
+        # If training used coordinates directly, use:
+        input_tensor = input_coords.to(device)
         
         # Add last valid coordinates to extra data
         extra_data['last_valid_coords'] = last_valid_coords
@@ -262,12 +267,12 @@ def calculate_metrics(pred, target, args):
         pixel_error = torch.norm(pred - target, dim=1).mean().item()
         metrics['pixel_error'] = pixel_error
         
-        # Calculate velocity ratio
+        # Calculate velocity ratio with numerical stability
         pred_magnitude = torch.norm(pred, dim=1)
-        target_magnitude = torch.norm(target, dim=1)
+        target_magnitude = torch.clamp(torch.norm(target, dim=1), min=1e-4)
         
         # Handle zero magnitudes
-        valid_mask = (target_magnitude > 0) & (pred_magnitude > 0)
+        valid_mask = (target_magnitude > 1e-4) & (pred_magnitude > 0)
         if valid_mask.any():
             velocity_ratio = (pred_magnitude[valid_mask] / target_magnitude[valid_mask]).mean().item()
             metrics['velocity_ratio'] = velocity_ratio
@@ -513,9 +518,9 @@ def visualize_coord_predictions(predictions, targets, extra_data, args, output_d
         ax.plot([last_valid_coord[0], target_coord[0]], [last_valid_coord[1], target_coord[1]], 'g-o', label='Target')
         ax.plot([last_valid_coord[0], pred_coord[0]], [last_valid_coord[1], pred_coord[1]], 'r-o', label='Prediction')
         
-        # Add arrows
-        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), target[0].item(), target[1].item(), color='g', width=0.1, head_width=0.5, alpha=0.7)
-        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), pred[0].item(), pred[1].item(), color='r', width=0.1, head_width=0.5, alpha=0.7)
+        # Add arrows with appropriate scaling for 32x32 image
+        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), target[0].item(), target[1].item(), color='g', width=0.05, head_width=0.3, alpha=0.7)
+        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), pred[0].item(), pred[1].item(), color='r', width=0.05, head_width=0.3, alpha=0.7)
         
         # Set limits
         ax.set_xlim(0, args.img_size)
@@ -549,6 +554,10 @@ def plot_velocity_ratio_histogram(metrics, output_dir):
     
     # Get velocity ratio data
     velocity_ratios = metrics['velocity_ratio_data']
+    
+    # Handle empty data
+    if not velocity_ratios:
+        return
     
     # Create histogram
     plt.figure(figsize=(10, 6))
@@ -584,6 +593,10 @@ def plot_direction_cosine_histogram(metrics, output_dir):
     
     # Get direction cosine data
     direction_cosines = metrics['direction_cos_data']
+    
+    # Handle empty data
+    if not direction_cosines:
+        return
     
     # Create histogram
     plt.figure(figsize=(10, 6))
