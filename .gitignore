@@ -168,3 +168,18 @@ configs_test/
 api/test.py
 configs/kinetics/simvp
 configs/bair/simvp
+
+# Experiments directory specific ignores
+experiments/**/logs/
+experiments/**/models/
+experiments/**/data/
+experiments/**/data_patterns/
+experiments/**/datasets/
+experiments/**/results/
+experiments/**/*.log
+experiments/**/*.pkl
+experiments/**/*.npy
+experiments/**/*.h5
+experiments/**/*.hdf5
+experiments/**/*.ckpt
+experiments/**/*.pth
