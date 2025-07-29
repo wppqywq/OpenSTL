@@ -19,6 +19,8 @@
     <img src="https://img.shields.io/badge/issue%20resolution-1%20d-%23B7A800" /></a>
 <a href="https://img.shields.io/github/stars/chengtan9907/OpenSTL" alt="arXiv">
     <img src="https://img.shields.io/github/stars/chengtan9907/OpenSTL" /></a>
+<a href="https://console.runpod.io/hub/wppqywq/OpenSTL" alt="RunPod">
+    <img src="https://api.runpod.io/badge/wppqywq/OpenSTL" /></a>
 </p>
 
 [📘Documentation](https://openstl.readthedocs.io/en/latest/) |

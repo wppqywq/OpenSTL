@@ -129,7 +129,11 @@ def prepare_batch_for_task(batch, args, device):
     """
     # Extract coordinates and fixation mask
     coordinates = batch['coordinates'].to(device)
-    fixation_mask = batch['fixation_mask'].to(device)
+    # Handle both 'mask' and 'fixation_mask' keys for compatibility
+    if 'fixation_mask' in batch:
+        fixation_mask = batch['fixation_mask'].to(device)
+    else:
+        fixation_mask = batch['mask'].to(device)
     
     # Determine input and target sequence lengths
     seq_len = coordinates.shape[1]
@@ -431,31 +435,31 @@ def visualize_heatmap_predictions(predictions, targets, extra_data, args, output
         plt.savefig(output_dir / f'sample_{i+1}_heatmap.png', dpi=150)
         plt.close()
         
-        # Extract coordinates using argmax
-        if hasattr(model, 'extract_coordinates_from_heatmap'):
-            # Extract coordinates from target and prediction
-            target_coords = model.extract_coordinates_from_heatmap(target.unsqueeze(0).to(device))
-            pred_coords = model.extract_coordinates_from_heatmap(pred.unsqueeze(0).to(device))
-            
-            # Create visualization with coordinates
-            fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-            
-            # Plot target with coordinate
-            axes[0].imshow(target[0], cmap='viridis')
-            axes[0].plot(target_coords[0, 0].item(), target_coords[0, 1].item(), 'ro', markersize=8)
-            axes[0].set_title('Target')
-            axes[0].axis('off')
-            
-            # Plot prediction with coordinate
-            axes[1].imshow(pred[0], cmap='viridis')
-            axes[1].plot(pred_coords[0, 0].item(), pred_coords[0, 1].item(), 'ro', markersize=8)
-            axes[1].set_title('Prediction')
-            axes[1].axis('off')
-            
-            # Save figure
-            plt.tight_layout()
-            plt.savefig(output_dir / f'sample_{i+1}_heatmap_coords.png', dpi=150)
-            plt.close()
+        # Extract coordinates using argmax (commented out as model and device not available in this scope)
+        # if hasattr(model, 'extract_coordinates_from_heatmap'):
+        #     # Extract coordinates from target and prediction
+        #     target_coords = model.extract_coordinates_from_heatmap(target.unsqueeze(0).to(device))
+        #     pred_coords = model.extract_coordinates_from_heatmap(pred.unsqueeze(0).to(device))
+        #     
+        #     # Create visualization with coordinates
+        #     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        #     
+        #     # Plot target with coordinate
+        #     axes[0].imshow(target[0], cmap='viridis')
+        #     axes[0].plot(target_coords[0, 0].item(), target_coords[0, 1].item(), 'ro', markersize=8)
+        #     axes[0].set_title('Target')
+        #     axes[0].axis('off')
+        #     
+        #     # Plot prediction with coordinate
+        #     axes[1].imshow(pred[0], cmap='viridis')
+        #     axes[1].plot(pred_coords[0, 0].item(), pred_coords[0, 1].item(), 'ro', markersize=8)
+        #     axes[1].set_title('Prediction')
+        #     axes[1].axis('off')
+        #     
+        #     # Save figure
+        #     plt.tight_layout()
+        #     plt.savefig(output_dir / f'sample_{i+1}_heatmap_coords.png', dpi=150)
+        #     plt.close()
 
 def visualize_coord_predictions(predictions, targets, extra_data, args, output_dir):
     """
@@ -510,8 +514,8 @@ def visualize_coord_predictions(predictions, targets, extra_data, args, output_d
         ax.plot([last_valid_coord[0], pred_coord[0]], [last_valid_coord[1], pred_coord[1]], 'r-o', label='Prediction')
         
         # Add arrows
-        ax.arrow(last_valid_coord[0], last_valid_coord[1], target[0], target[1], color='g', width=0.1, head_width=0.5, alpha=0.7)
-        ax.arrow(last_valid_coord[0], last_valid_coord[1], pred[0], pred[1], color='r', width=0.1, head_width=0.5, alpha=0.7)
+        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), target[0].item(), target[1].item(), color='g', width=0.1, head_width=0.5, alpha=0.7)
+        ax.arrow(last_valid_coord[0].item(), last_valid_coord[1].item(), pred[0].item(), pred[1].item(), color='r', width=0.1, head_width=0.5, alpha=0.7)
         
         # Set limits
         ax.set_xlim(0, args.img_size)
