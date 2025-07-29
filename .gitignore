@@ -157,6 +157,7 @@ lightning_logs/
 *.swp
 .DS_Store
 *.json
+!.runpod/*.json
 
 results
 figs
