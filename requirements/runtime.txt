@@ -21,3 +21,4 @@ lightning==2.2.1
 PyWavelets
 runpod
 Pillow
+

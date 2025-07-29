@@ -159,10 +159,12 @@ lightning_logs/
 *.json
 !.runpod/*.json
 
+
 results
 figs
 .vscode
 .ipynb_checkpoints
+
 
 
 
