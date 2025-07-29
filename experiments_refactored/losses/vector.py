@@ -64,7 +64,7 @@ class PolarDecoupledLoss(nn.Module):
     allowing for separate treatment of these aspects.
     """
     
-    def __init__(self, direction_weight=1.0, magnitude_weight=1.0, reduction='mean'):
+    def __init__(self, direction_weight=1.0, magnitude_weight=1.0, reduction='mean', eps=1e-6):
         """
         Initialize the PolarDecoupledLoss.
         
@@ -72,11 +72,13 @@ class PolarDecoupledLoss(nn.Module):
             direction_weight (float): Weight for the direction component.
             magnitude_weight (float): Weight for the magnitude component.
             reduction (str): Reduction method ('mean', 'sum', 'none').
+            eps (float): Small value to avoid division by zero.
         """
         super().__init__()
         self.direction_weight = direction_weight
         self.magnitude_weight = magnitude_weight
         self.reduction = reduction
+        self.eps = eps
         
     def forward(self, pred, target):
         """
@@ -121,27 +123,16 @@ class PolarDecoupledLoss(nn.Module):
         # Calculate magnitude loss (L1)
         magnitude_loss = torch.abs(pred_magnitude - target_magnitude)
         
-        # Calculate direction loss (1 - cosine similarity)
-        # Handle zero vectors to avoid NaN
-        zero_mask = (pred_magnitude == 0) | (target_magnitude == 0)
+        # Calculate direction loss using stable cosine similarity
+        # Normalize vectors with eps to avoid division by zero
+        pred_unit = pred / (pred.norm(dim=1, keepdim=True) + self.eps)
+        target_unit = target / (target.norm(dim=1, keepdim=True) + self.eps)
         
-        if zero_mask.any():
-            # For zero vectors, set direction loss to 1 (maximum)
-            direction_loss = torch.ones_like(magnitude_loss)
-            
-            # Calculate cosine similarity for non-zero vectors
-            non_zero_mask = ~zero_mask
-            if non_zero_mask.any():
-                pred_normalized = F.normalize(pred[non_zero_mask], dim=1)
-                target_normalized = F.normalize(target[non_zero_mask], dim=1)
-                cosine_sim = torch.sum(pred_normalized * target_normalized, dim=1)
-                direction_loss[non_zero_mask] = 1.0 - cosine_sim
-        else:
-            # All vectors are non-zero
-            pred_normalized = F.normalize(pred, dim=1)
-            target_normalized = F.normalize(target, dim=1)
-            cosine_sim = torch.sum(pred_normalized * target_normalized, dim=1)
-            direction_loss = 1.0 - cosine_sim
+        # Calculate cosine similarity
+        cosine_sim = (pred_unit * target_unit).sum(dim=1)
+        
+        # Direction loss is 1 - cosine similarity
+        direction_loss = 1.0 - cosine_sim
         
         return direction_loss, magnitude_loss
 

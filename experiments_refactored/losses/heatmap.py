@@ -7,7 +7,7 @@ class MSELoss(nn.Module):
     Mean Squared Error Loss for heatmap regression.
     
     This is a simple MSE loss that treats each pixel in the heatmap as 
-    an independent regression target.
+    an independent regression target. Suitable for dense Gaussian representation.
     """
     
     def __init__(self, reduction='mean'):
@@ -42,15 +42,17 @@ class KLDivergenceLoss(nn.Module):
     the divergence between the predicted and target distributions.
     """
     
-    def __init__(self, reduction='batchmean'):
+    def __init__(self, reduction='batchmean', eps=1e-10):
         """
         Initialize the KLDivergenceLoss.
         
         Args:
             reduction (str): Reduction method ('batchmean', 'sum', 'mean', 'none').
+            eps (float): Small value to avoid log(0).
         """
         super().__init__()
         self.reduction = reduction
+        self.eps = eps
         self.kl_div = nn.KLDivLoss(reduction=reduction)
         
     def forward(self, pred, target):
@@ -78,7 +80,7 @@ class KLDivergenceLoss(nn.Module):
         pred_normalized = pred / pred_sum
         
         # Apply log to prediction for KL divergence
-        log_pred = torch.log(pred_normalized + 1e-10)  # Add small epsilon to avoid log(0)
+        log_pred = torch.log(pred_normalized + self.eps)
         
         # Calculate KL divergence
         return self.kl_div(log_pred, target_normalized)
@@ -90,7 +92,9 @@ class EarthMoverDistanceLoss(nn.Module):
     This loss treats heatmaps as probability distributions and calculates
     the minimum "work" required to transform one distribution into another.
     
-    Note: This is a simplified approximation of EMD using the 2-Wasserstein distance.
+    Note: This is a simplified approximation of EMD using center of mass distance,
+    which is equivalent to 2-Wasserstein distance for single-peaked distributions
+    like Gaussian fixation heatmaps.
     """
     
     def __init__(self, reduction='mean'):
@@ -136,16 +140,12 @@ class EarthMoverDistanceLoss(nn.Module):
         pred_sum = torch.where(pred_sum == 0, torch.ones_like(pred_sum), pred_sum)
         pred_normalized = pred / pred_sum
         
-        # Calculate expected coordinates for target and prediction
-        # First, apply softmax to ensure proper probability distribution
-        target_softmax = F.softmax(target_normalized.view(B, C, -1), dim=2).view(B, C, H, W)
-        pred_softmax = F.softmax(pred_normalized.view(B, C, -1), dim=2).view(B, C, H, W)
-        
-        # Calculate expected coordinates
-        target_x = (target_softmax * x_grid).sum(dim=(2, 3))
-        target_y = (target_softmax * y_grid).sum(dim=(2, 3))
-        pred_x = (pred_softmax * x_grid).sum(dim=(2, 3))
-        pred_y = (pred_softmax * y_grid).sum(dim=(2, 3))
+        # Calculate expected coordinates using normalized distributions directly
+        # No need for additional softmax since pred_normalized is already normalized
+        target_x = (target_normalized * x_grid).sum(dim=(2, 3))
+        target_y = (target_normalized * y_grid).sum(dim=(2, 3))
+        pred_x = (pred_normalized * x_grid).sum(dim=(2, 3))
+        pred_y = (pred_normalized * y_grid).sum(dim=(2, 3))
         
         # Calculate squared Euclidean distance between expected coordinates
         squared_distance = (target_x - pred_x).pow(2) + (target_y - pred_y).pow(2)

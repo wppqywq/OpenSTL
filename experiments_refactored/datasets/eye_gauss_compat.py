@@ -44,7 +44,7 @@ def create_sparse_representation(coordinates, fixation_mask, img_size=32):
     frames = torch.zeros(T, 1, img_size, img_size)
     
     for t in range(T):
-        if fixation_mask[t]:
+        if fixation_mask[t].item() if fixation_mask[t].numel() == 1 else fixation_mask[t].any():
             # Round and clip coordinates to valid pixel positions
             x, y = coordinates[t]
             x_pixel = torch.clamp(torch.round(x).long(), 0, img_size - 1)
@@ -77,7 +77,7 @@ def create_dense_gaussian_representation(coordinates, fixation_mask, img_size=32
     )
     
     for t in range(T):
-        if fixation_mask[t]:
+        if fixation_mask[t].item() if fixation_mask[t].numel() == 1 else fixation_mask[t].any():
             # Get coordinates for this frame
             x, y = coordinates[t]
             

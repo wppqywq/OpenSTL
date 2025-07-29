@@ -46,7 +46,8 @@ def get_loss(name, **kwargs):
         )
     elif name == 'kl':
         return KLDivergenceLoss(
-            reduction=kwargs.get('reduction', 'batchmean')
+            reduction=kwargs.get('reduction', 'batchmean'),
+            eps=kwargs.get('eps', 1e-10)
         )
     elif name == 'emd':
         return EarthMoverDistanceLoss(
@@ -63,7 +64,8 @@ def get_loss(name, **kwargs):
         return PolarDecoupledLoss(
             direction_weight=kwargs.get('direction_weight', 1.0),
             magnitude_weight=kwargs.get('magnitude_weight', 1.0),
-            reduction=kwargs.get('reduction', 'mean')
+            reduction=kwargs.get('reduction', 'mean'),
+            eps=kwargs.get('eps', 1e-6)
         )
     elif name == 'uncertainty_weighted':
         return UncertaintyWeightedLoss(

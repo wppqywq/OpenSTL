@@ -163,11 +163,7 @@ figs
 .vscode
 .ipynb_checkpoints
 
-# temp
-configs_test/
-api/test.py
-configs/kinetics/simvp
-configs/bair/simvp
+
 
 # Experiments directory specific ignores
 experiments/**/logs/
@@ -183,3 +179,4 @@ experiments/**/*.h5
 experiments/**/*.hdf5
 experiments/**/*.ckpt
 experiments/**/*.pth
+experiments/**/*.pt
