@@ -1,6 +1,4 @@
-# Refactored Eye Movement Prediction Experiments
 
-This directory contains a refactored version of the eye movement prediction experiments, designed to systematically investigate the impact of different representations and loss functions on prediction performance.
 
 ## Directory Structure
 
