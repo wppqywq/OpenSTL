@@ -135,6 +135,13 @@ def parse_args():
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=common_config.get('batch_size', 32),
                         help='Batch size')
+    # Optional dataset size overrides (geom_simple only)
+    parser.add_argument('--train_size', type=int, default=None,
+                        help='Override number of training samples (geom_simple only)')
+    parser.add_argument('--val_size', type=int, default=None,
+                        help='Override number of validation samples (geom_simple only)')
+    parser.add_argument('--test_size', type=int, default=None,
+                        help='Override number of test samples (geom_simple only)')
     parser.add_argument('--num_workers', type=int, default=max(0, (os.cpu_count() or 2) // 2),
                         help='DataLoader worker processes')
     parser.add_argument('--epochs', type=int, default=common_config.get('epochs', 100),
@@ -612,7 +619,10 @@ def main():
         train_loader, val_loader, test_loader = create_geom_simple_loaders(
             batch_size=args.batch_size,
             sequence_length=args.total_seq_length,
-            representation=representation
+            representation=representation,
+            num_train=args.train_size,
+            num_val=args.val_size,
+            num_test=args.test_size
         )
     else:
         raise ValueError(f"Unknown dataset: {args.data}")

@@ -125,9 +125,9 @@ def parse_cli() -> argparse.Namespace:
     p.add_argument("--num_workers", type=int, default=max(0, (os.cpu_count() or 2) // 2), help="PyTorch DataLoader workers per experiment")
     p.add_argument("--batch_size", type=int, default=32, help="Batch size to pass to each training job")
     # Optional dataset size overrides (geom_simple only)
-    p.add_argument("--train_size", type=int, default=2000, help="Override number of training samples (geom)")
-    p.add_argument("--val_size", type=int, default=200, help="Override number of validation samples (geom)")
-    p.add_argument("--test_size", type=int, default=200, help="Override number of test samples (geom)")
+    p.add_argument("--train_size", type=int, default=None, help="Override number of training samples (geom)")
+    p.add_argument("--val_size", type=int, default=None, help="Override number of validation samples (geom)")
+    p.add_argument("--test_size", type=int, default=None, help="Override number of test samples (geom)")
     return p.parse_args()
 
 
