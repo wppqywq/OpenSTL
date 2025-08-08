@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-
-=======
->>>>>>> 154982d (refactor: eval/plot updates, argmax extraction, run_experiments resume from best, notebook runner; grayscale per-frame; legends; valid-prefix traj; add dataset size overrides)
 
 ## Directory Structure
 
@@ -146,11 +142,3 @@ Training and evaluation results are saved in the `results/` directory, organized
 
 - **checkpoints**: Model checkpoints
 - **logs**: Training logs
-<<<<<<< HEAD
-- **visualizations**: Visualizations of predictions
-- **metrics.json**: Evaluation metrics 
-=======
-- **evaluation_unified**: Evaluation results with standardized metrics
-- **visualizations**: Representation-aware visualizations
-- **experiment_manifest.json**: Experiment metadata and configuration 
->>>>>>> 154982d (refactor: eval/plot updates, argmax extraction, run_experiments resume from best, notebook runner; grayscale per-frame; legends; valid-prefix traj; add dataset size overrides)
