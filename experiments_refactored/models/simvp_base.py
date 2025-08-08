@@ -8,108 +8,134 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from openstl.models import SimVP_Model
 
+class CoordinateHead(nn.Module):
+    """MLP head for coordinate prediction from SimVP features."""
+    def __init__(self, feature_dim, output_seq_length, hidden_dim=512):
+        super().__init__()
+        self.output_seq_length = output_seq_length
+        self.hidden_dim = hidden_dim
+        
+        if feature_dim is not None:
+            self.mlp = nn.Sequential(
+                nn.Linear(feature_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_dim // 2, output_seq_length * 2)  # 2 for (x, y) coordinates
+            )
+        else:
+            self.mlp = None
+        
+    def _init_mlp(self, feature_dim, device):
+        """Initialize MLP with correct feature dimension."""
+        self.mlp = nn.Sequential(
+            nn.Linear(feature_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.hidden_dim // 2, self.output_seq_length * 2)  # 2 for (x, y) coordinates
+        ).to(device)
+        
+    def forward(self, features):
+        # features shape: (B, feature_dim)
+        if self.mlp is None:
+            feature_dim = features.shape[1]
+            self._init_mlp(feature_dim, features.device)
+            
+        output = self.mlp(features)  # (B, output_seq_length * 2)
+        return output.view(-1, self.output_seq_length, 2)  # (B, T, 2)
+
 class SimVPWithTaskHead(nn.Module):
     """
     SimVP model with different task heads.
-    
-    This model wraps the base SimVP model from OpenSTL and adds task-specific heads:
-    - 'pixel': Binary pixel prediction (for sparse representation)
-    - 'heat': Gaussian heatmap prediction (for dense representation)
-    - 'coord': Coordinate displacement prediction (for vector representation)
+    For coord task: Uses SimVP encoder + MLP decoder
+    For pixel/heat tasks: Uses standard SimVP
     """
-    
     def __init__(self, in_shape, hid_S=64, hid_T=512, N_S=4, N_T=8, 
                  model_type='gSTA', task='pixel', out_shape=None):
-        """
-        Initialize the model.
-        
-        Args:
-            in_shape (tuple): Input shape (T, C, H, W).
-            hid_S (int): Hidden dimension of spatial encoder.
-            hid_T (int): Hidden dimension of temporal encoder.
-            N_S (int): Number of spatial encoder blocks.
-            N_T (int): Number of temporal encoder blocks.
-            model_type (str): Type of SimVP model ('gSTA', 'IncepU', etc.).
-            task (str): Task type ('pixel', 'heat', or 'coord').
-            out_shape (tuple, optional): Output shape. If None, uses in_shape.
-        """
         super().__init__()
         
         self.task = task
+        self.out_shape = out_shape if out_shape is not None else in_shape
         
-        # Set output shape if not provided
-        if out_shape is None:
-            out_shape = in_shape
-        
-        # Create base SimVP model
-        self.base_model = SimVP_Model(
-            in_shape=in_shape,
-            hid_S=hid_S,
-            hid_T=hid_T,
-            N_S=N_S,
-            N_T=N_T,
-            model_type=model_type
-        )
-        
-        # Create task-specific heads
-        if task in ['pixel', 'heat']:
-            # For pixel and heatmap tasks, use the default SimVP decoder
-            # The base model already has a decoder for these tasks
-            pass
-        elif task == 'coord':
-            # For coordinate task, replace the decoder with a coordinate regression head
+        if task == 'coord':
+            # Use SimVP as feature extractor for coordinate prediction
+            # Create a dummy output shape for SimVP (we'll replace the decoder)
+            dummy_out_shape = (self.out_shape[0], 64, 8, 8)  # Reduced spatial size for features
+            self.simvp_encoder = SimVP_Model(
+                in_shape=in_shape,
+                hid_S=hid_S,
+                hid_T=hid_T,
+                N_S=N_S,
+                N_T=N_T,
+                model_type=model_type,
+                out_shape=dummy_out_shape,
+            )
             
-            # Get the feature dimension from the encoder
-            # The feature dimension is determined by the hidden dimension of the temporal encoder
-            feature_dim = hid_T
+            # Use a fixed, reasonable feature dimension for coordinate head
+            # This will be corrected if needed on first forward pass
+            self.coord_head = CoordinateHead(
+                feature_dim=None,  # Will be set dynamically
+                output_seq_length=self.out_shape[0],
+                hidden_dim=512
+            )
+            self._coord_head_initialized = False
             
-            # Create a coordinate regression head
-            self.coord_head = nn.Sequential(
-                nn.Linear(feature_dim, 256),
-                nn.ReLU(),
-                nn.Dropout(0.1),
-                nn.Linear(256, 64),
-                nn.ReLU(),
-                nn.Linear(64, 2)  # Output (Δx, Δy)
+        elif task in ['pixel', 'heat']:
+            self.base_model = SimVP_Model(
+                in_shape=in_shape,
+                hid_S=hid_S,
+                hid_T=hid_T,
+                N_S=N_S,
+                N_T=N_T,
+                model_type=model_type,
+                out_shape=self.out_shape,
             )
         else:
             raise ValueError(f"Unknown task: {task}")
     
     def forward(self, x):
-        """
-        Forward pass.
-        
-        Args:
-            x (torch.Tensor): Input tensor of shape (B, T, C, H, W).
-            
-        Returns:
-            torch.Tensor: Output tensor, shape depends on the task:
-                - 'pixel'/'heat': (B, T_out, C, H, W)
-                - 'coord': (B, 2) for displacement vector (Δx, Δy)
-        """
         if self.task in ['pixel', 'heat']:
-            # For pixel and heatmap tasks, use the base model directly
+            # Ensure input tensor is contiguous to avoid view() issues in SimVP
+            x = x.contiguous()
             return self.base_model(x)
         
         elif self.task == 'coord':
-            # For coordinate task, extract features and apply coordinate head
+            B, T_in, C, H, W = x.shape
+            aft_seq_length = self.out_shape[0]
+
+            # Ensure input tensor is contiguous for SimVP encoder
+            x = x.contiguous()
             
-            # Get features from the encoder
-            # Use the forward method with mid_output flag
-            features = self.base_model(x, return_mid=True)
+            # Use SimVP to extract spatio-temporal features
+            simvp_features = self.simvp_encoder(x)  # (B, T_out, C_feat, H_feat, W_feat)
             
-            # Extract the features from the last time step
-            # features shape: (B, T, C, H, W) -> (B, C, H, W)
-            last_frame_features = features[:, -1]
+            # Global average pooling over spatial dimensions only, keep temporal
+            # Shape: (B, T_out, C_feat, H_feat, W_feat) -> (B, T_out, C_feat)
+            B, T_out, C_feat, H_feat, W_feat = simvp_features.shape
+            pooled_features = F.adaptive_avg_pool2d(
+                simvp_features.view(B * T_out, C_feat, H_feat, W_feat),
+                (1, 1)
+            ).view(B, T_out, C_feat)
             
-            # Global average pooling to get a feature vector
-            # (B, C, H, W) -> (B, C)
-            pooled_features = F.adaptive_avg_pool2d(last_frame_features, (1, 1)).view(x.size(0), -1)
+            # Flatten temporal and channel dimensions
+            # Shape: (B, T_out, C_feat) -> (B, T_out * C_feat)
+            flattened_features = pooled_features.view(B, -1)
             
-            # Apply coordinate head to get displacement vector
-            displacement = self.coord_head(pooled_features)
+            # Debug print for dimension tracking
+            if not hasattr(self, '_debug_printed'):
+                print(f"  SimVP features shape: {simvp_features.shape}")
+                print(f"  Pooled features shape: {pooled_features.shape}")
+                print(f"  Flattened features shape: {flattened_features.shape}")
+                self._debug_printed = True
             
-            return displacement
+            # Predict coordinate displacements
+            displacements = self.coord_head(flattened_features)
+            return displacements  # (B, T_out, 2)
     
     def extract_coordinates_from_heatmap(self, heatmap):
         """

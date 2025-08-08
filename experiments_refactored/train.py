@@ -6,14 +6,14 @@ This script serves as the entry point for all training experiments,
 supporting different datasets, representations, models, and loss functions.
 
 Example usage:
-    # Train with position_dependent_gaussian dataset, pixel representation, and focal_bce loss
-    python train.py --data position_dependent_gaussian --repr pixel --loss focal_bce
+    # Train with gauss dataset, pixel representation, and focal_bce loss
+python train.py --data gauss --repr pixel --loss focal_bce
 
     # Train with geom_simple dataset, heat representation, and kl loss
     python train.py --data geom_simple --repr heat --loss kl --sigma 1.5
 
-    # Train with position_dependent_gaussian dataset, coord representation, and polar_decoupled loss
-    python train.py --data position_dependent_gaussian --repr coord --loss polar_decoupled --w_dir 1.0 --w_mag 1.0
+    # Train with gauss dataset, coord representation, and polar_decoupled loss
+python train.py --data gauss --repr coord --loss polar_decoupled --w_dir 1.0 --w_mag 1.0
 """
 
 import os
@@ -29,6 +29,15 @@ from pathlib import Path
 import time
 import json
 from tqdm import tqdm
+import random
+
+# Set random seeds for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
+random.seed(42)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,7 +47,7 @@ from experiments_refactored.datasets import (
     create_position_dependent_gaussian_loaders,
     create_geom_simple_loaders,
     create_sparse_representation,
-    create_dense_gaussian_representation,
+    create_gaussian_representation,
     calculate_displacement_vectors
 )
 
@@ -49,69 +58,99 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Train position-dependent Gaussian prediction models')
     
+    # Load default values from sweep.yaml
+    import yaml
+    sweep_path = Path(__file__).parent / 'sweep.yaml'
+    if sweep_path.exists():
+        with open(sweep_path, 'r') as f:
+            sweep_config = yaml.safe_load(f)
+        common_config = sweep_config.get('common', {})
+    else:
+        common_config = {}
+    
     # Dataset arguments
-    parser.add_argument('--data', type=str, default='eye_gauss',
-                        choices=['eye_gauss', 'geom_simple'],
+    parser.add_argument('--data', type=str, default='gauss',
+                    choices=['gauss', 'geom_simple'],
                         help='Dataset to use')
+
     parser.add_argument('--data_path', type=str, default=None,
                         help='Path to the data directory')
     parser.add_argument('--generate_data', action='store_true',
                         help='Generate new data instead of loading from files')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to checkpoint to resume training from')
     
     # Representation arguments
     parser.add_argument('--repr', type=str, default='pixel',
                         choices=['pixel', 'heat', 'coord'],
                         help='Representation type')
-    parser.add_argument('--sigma', type=float, default=1.5,
+    parser.add_argument('--sigma', type=float, default=common_config.get('sigma', 2.0),
                         help='Sigma for Gaussian heatmap representation')
-    parser.add_argument('--img_size', type=int, default=32,
+    parser.add_argument('--img_size', type=int, default=common_config.get('img_size', 32),
                         help='Image size for pixel and heatmap representations')
+    parser.add_argument('--pre_seq_length', type=int, default=common_config.get('pre_seq_length', 10),
+                        help='Number of input frames')
+    parser.add_argument('--aft_seq_length', type=int, default=common_config.get('aft_seq_length', 10),
+                        help='Number of prediction frames')
+    # Coordinate mode: absolute coordinates or displacement sequence
+    parser.add_argument('--coord_mode', type=str, default='absolute', choices=['absolute', 'displacement'],
+                        help='For coord representation: predict absolute coords or displacement sequence')
     
     # Model arguments
     parser.add_argument('--model', type=str, default='simvp',
                         choices=['simvp'],
                         help='Model type')
-    parser.add_argument('--hid_S', type=int, default=64,
+    parser.add_argument('--hid_S', type=int, default=common_config.get('hid_S', 64),
                         help='Hidden dimension of spatial encoder')
-    parser.add_argument('--hid_T', type=int, default=512,
+    parser.add_argument('--hid_T', type=int, default=common_config.get('hid_T', 512),
                         help='Hidden dimension of temporal encoder')
-    parser.add_argument('--N_S', type=int, default=4,
+    parser.add_argument('--N_S', type=int, default=common_config.get('N_S', 4),
                         help='Number of spatial encoder blocks')
-    parser.add_argument('--N_T', type=int, default=8,
+    parser.add_argument('--N_T', type=int, default=common_config.get('N_T', 8),
                         help='Number of temporal encoder blocks')
-    parser.add_argument('--model_type', type=str, default='gSTA',
+    parser.add_argument('--model_type', type=str, default=common_config.get('model_type', 'gSTA'),
                         choices=['gSTA', 'IncepU', 'ConvNeXt', 'Uniformer', 'ViT', 'Swin', 'MLP'],
                         help='Type of SimVP model')
     
-    # Loss arguments
+    # Loss arguments (conditionally added based on loss type)
     parser.add_argument('--loss', type=str, default=None,
                         help='Loss function to use (if None, uses default for representation)')
+    
+    # Common loss parameters (only add relevant ones dynamically in build_loss_args)
     parser.add_argument('--alpha', type=float, default=0.25,
-                        help='Alpha parameter for focal losses')
+                        help='Alpha parameter for focal losses (focal_bce, focal_tversky)')
     parser.add_argument('--gamma', type=float, default=2.0,
-                        help='Gamma parameter for focal losses')
-    parser.add_argument('--pos_weight', type=float, default=1000.0,
-                        help='Positive class weight for weighted BCE loss')
+                        help='Gamma parameter for focal losses (focal_bce, focal_tversky)')
     parser.add_argument('--delta', type=float, default=1.0,
                         help='Delta parameter for Huber loss')
     parser.add_argument('--w_dir', type=float, default=1.0,
                         help='Direction weight for polar decoupled loss')
     parser.add_argument('--w_mag', type=float, default=1.0,
                         help='Magnitude weight for polar decoupled loss')
+    parser.add_argument('--pos_weight', type=float, default=1.0,
+                        help='Positive class weight for weighted losses')
+    parser.add_argument('--cosine_weight', type=float, default=1.0,
+                        help='Cosine similarity weight for L1+Cosine loss')
     
     # Training arguments
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=common_config.get('batch_size', 32),
                         help='Batch size')
-    parser.add_argument('--epochs', type=int, default=100,
+    parser.add_argument('--num_workers', type=int, default=max(0, (os.cpu_count() or 2) // 2),
+                        help='DataLoader worker processes')
+    parser.add_argument('--epochs', type=int, default=common_config.get('epochs', 100),
                         help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=1e-3,
+    parser.add_argument('--lr', type=float, default=common_config.get('lr', 1e-3),
                         help='Learning rate')
-    parser.add_argument('--weight_decay', type=float, default=1e-4,
+    parser.add_argument('--weight_decay', type=float, default=common_config.get('weight_decay', 1e-4),
                         help='Weight decay')
-    parser.add_argument('--patience', type=int, default=15,
+    parser.add_argument('--patience', type=int, default=common_config.get('patience', 15),
                         help='Patience for early stopping')
     parser.add_argument('--device', type=str, default=None,
                         help='Device to use (cuda, mps, or cpu)')
+    parser.add_argument('--total_seq_length', type=int, default=common_config.get('total_seq_length', 20),
+                        help='Total sequence length (will be split into input/output)')
+    parser.add_argument('--split_ratio', type=float, default=common_config.get('split_ratio', 0.5),
+                        help='Ratio for splitting sequence (0.5 means half input, half output)')
     
     # Output arguments
     parser.add_argument('--output_dir', type=str, default='results',
@@ -175,124 +214,80 @@ class EarlyStopping:
 
 def prepare_batch_for_task(batch, args, device):
     """
-    Prepare a batch for the specified task.
-    
-    Args:
-        batch (dict): Batch from the dataloader.
-        args (argparse.Namespace): Command line arguments.
-        device (torch.device): Device to use.
-        
-    Returns:
-        tuple: (input_tensor, target_tensor)
+    Prepare a batch for the specified task. This version is aligned for seq-to-seq prediction.
     """
-    # Extract coordinates and fixation mask
-    coordinates = batch['coordinates'].to(device)
-    # Handle both 'mask' and 'fixation_mask' keys for compatibility
-    if 'fixation_mask' in batch:
-        fixation_mask = batch['fixation_mask'].to(device)
+    # Handle different batch formats
+    if isinstance(batch, dict):
+        coordinates = batch['coordinates'].to(device)
+        mask_data = batch.get('fixation_mask', batch.get('mask'))
+        fixation_mask = mask_data.to(device) if mask_data is not None else None
+        frames = batch.get('frames', None)
     else:
-        fixation_mask = batch['mask'].to(device)
+        # Handle tuple format (frames, coordinates, mask)
+        frames, coordinates, fixation_mask = batch
+        coordinates = coordinates.to(device)
+        fixation_mask = fixation_mask.to(device)
+        if frames is not None:
+            frames = frames.to(device)
     
-    # Determine input and target sequence lengths
-    seq_len = coordinates.shape[1]
-    input_len = seq_len // 2
+    # Create default mask if None
+    if fixation_mask is None:
+        fixation_mask = torch.ones(coordinates.shape[0], coordinates.shape[1], dtype=torch.bool, device=device)
     
-    # Split into input and target sequences
-    input_coords = coordinates[:, :input_len]
-    input_mask = fixation_mask[:, :input_len]
-    target_coords = coordinates[:, input_len:]
-    target_mask = fixation_mask[:, input_len:]
-    
-    # Process based on representation type
+    total_len = args.pre_seq_length + args.aft_seq_length
+    if coordinates.shape[1] < total_len:
+        # Pad sequences that are too short
+        padding_len = total_len - coordinates.shape[1]
+        padding_coords = torch.zeros(coordinates.shape[0], padding_len, 2, device=device)
+        padding_mask = torch.zeros(coordinates.shape[0], padding_len, dtype=torch.bool, device=device)
+        coordinates = torch.cat([coordinates, padding_coords], dim=1)
+        fixation_mask = torch.cat([fixation_mask, padding_mask], dim=1)
+
+    input_coords = coordinates[:, :args.pre_seq_length]
+    target_coords = coordinates[:, args.pre_seq_length:total_len]
+    input_mask = fixation_mask[:, :args.pre_seq_length]
+    target_mask = fixation_mask[:, args.pre_seq_length:total_len]
+
     if args.repr == 'pixel':
-        # Convert to sparse binary frames
-        input_frames = create_sparse_representation(input_coords, input_mask, args.img_size)
-        target_frames = create_sparse_representation(target_coords, target_mask, args.img_size)
-        
-        # Add channel dimension if needed and move to device
-        input_tensor = input_frames.to(device)
-        target_tensor = target_frames.to(device)
-        
-    elif args.repr == 'heat':
-        # Convert to dense Gaussian heatmap frames
-        input_frames = create_dense_gaussian_representation(
-            input_coords, input_mask, args.img_size, args.sigma
-        )
-        target_frames = create_dense_gaussian_representation(
-            target_coords, target_mask, args.img_size, args.sigma
-        )
-        
-        # Add channel dimension if needed and move to device
-        input_tensor = input_frames.to(device)
-        target_tensor = target_frames.to(device)
-        
-    elif args.repr == 'coord':
-        # Calculate displacement vectors for the target sequence
-        # We'll use the last valid input coordinate as the reference point
-        
-        # Find the last valid input coordinate for each batch item
-        last_valid_idx = torch.zeros(input_coords.shape[0], dtype=torch.long, device=device)
-        for b in range(input_coords.shape[0]):
-            valid_indices = torch.where(input_mask[b])[0]
-            if len(valid_indices) > 0:
-                last_valid_idx[b] = valid_indices[-1]
-        
-        # Get the last valid input coordinates
-        batch_indices = torch.arange(input_coords.shape[0], device=device)
-        last_valid_coords = input_coords[batch_indices, last_valid_idx]
-        
-        # Calculate displacements from the last valid input coordinate
-        target_displacements = torch.zeros_like(target_coords)
-        for b in range(target_coords.shape[0]):
-            for t in range(target_coords.shape[1]):
-                if target_mask[b, t]:
-                    target_displacements[b, t] = target_coords[b, t] - last_valid_coords[b]
-        
-        # Create target tensor (only for the first valid displacement)
-        target_tensor = torch.zeros(target_coords.shape[0], 2, device=device)
-        for b in range(target_coords.shape[0]):
-            valid_indices = torch.where(target_mask[b])[0]
-            if len(valid_indices) > 0:
-                target_tensor[b] = target_displacements[b, valid_indices[0]]
-        
-        # Use input frames for the model input
+        # For pixel representation, always create sparse frames
         input_tensor = create_sparse_representation(input_coords, input_mask, args.img_size).to(device)
-    
+        target_tensor = create_sparse_representation(target_coords, target_mask, args.img_size).to(device)
+    elif args.repr == 'heat':
+        # For heat representation, always create gaussian frames
+        input_tensor = create_gaussian_representation(input_coords, input_mask, args.img_size, args.sigma).to(device)
+        target_tensor = create_gaussian_representation(target_coords, target_mask, args.img_size, args.sigma).to(device)
+    elif args.repr == 'coord':
+        # For coord representation, use sparse frames as input (model expects frames)
+        input_tensor = create_sparse_representation(input_coords, input_mask, args.img_size).to(device)
+        if getattr(args, 'coord_mode', 'absolute') == 'displacement':
+            # Predict displacement relative to last input coordinate
+            last_coord = input_coords[:, -1:].detach()
+            target_tensor = target_coords - last_coord  # (B, T_out, 2)
+        else:
+            # Predict absolute coordinates
+            target_tensor = target_coords
     else:
         raise ValueError(f"Unknown representation: {args.repr}")
-    
+        
     return input_tensor, target_tensor
 
 def calculate_metrics(pred, target, args):
     """
-    Calculate task-specific metrics.
-    
-    Args:
-        pred (torch.Tensor): Model predictions.
-        target (torch.Tensor): Ground truth targets.
-        args (argparse.Namespace): Command line arguments.
-        
-    Returns:
-        dict: Dictionary of metrics.
+    Calculate task-specific metrics for seq-to-seq tasks.
     """
     metrics = {}
     
     if args.repr in ['pixel', 'heat']:
-        # For pixel and heatmap representations, calculate MSE
         mse = torch.mean((pred - target) ** 2).item()
         metrics['mse'] = mse
         
         if args.repr == 'pixel':
-            # For pixel representation, calculate binary metrics
             pred_binary = (pred > 0.5).float()
             target_binary = (target > 0.5).float()
-            
-            # Calculate true positives, false positives, false negatives
             tp = torch.sum(pred_binary * target_binary).item()
             fp = torch.sum(pred_binary * (1 - target_binary)).item()
             fn = torch.sum((1 - pred_binary) * target_binary).item()
             
-            # Calculate precision, recall, F1
             precision = tp / (tp + fp) if tp + fp > 0 else 0
             recall = tp / (tp + fn) if tp + fn > 0 else 0
             f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
@@ -302,31 +297,16 @@ def calculate_metrics(pred, target, args):
             metrics['f1'] = f1
     
     elif args.repr == 'coord':
-        # For coordinate representation, calculate displacement metrics
+        # pred and target shape: (B, T_out, 2)
+        # Calculate L2 distance for each time step, then average
+        error = torch.norm(pred - target, dim=-1) # Shape: (B, T_out)
         
-        # Calculate L2 distance (pixel error)
-        pixel_error = torch.norm(pred - target, dim=1).mean().item()
-        metrics['pixel_error'] = pixel_error
-        
-        # Calculate velocity ratio
-        pred_magnitude = torch.norm(pred, dim=1)
-        target_magnitude = torch.norm(target, dim=1)
-        
-        # Handle zero magnitudes
-        valid_mask = (target_magnitude > 0) & (pred_magnitude > 0)
-        if valid_mask.any():
-            velocity_ratio = (pred_magnitude[valid_mask] / target_magnitude[valid_mask]).mean().item()
-            metrics['velocity_ratio'] = velocity_ratio
-        
-        # Calculate direction cosine similarity
-        valid_mask = (target_magnitude > 0) & (pred_magnitude > 0)
-        if valid_mask.any():
-            pred_normalized = pred[valid_mask] / pred_magnitude[valid_mask].unsqueeze(1)
-            target_normalized = target[valid_mask] / target_magnitude[valid_mask].unsqueeze(1)
-            
-            direction_cos = torch.sum(pred_normalized * target_normalized, dim=1).mean().item()
-            metrics['direction_cos'] = direction_cos
-    
+        # Mean Displacement Error (MDE)
+        mde = error.mean().item()
+        metrics['mde'] = mde
+
+        # FDE removed per user request
+
     return metrics
 
 def train_epoch(model, train_loader, criterion, optimizer, args, device):
@@ -432,9 +412,85 @@ def validate_epoch(model, val_loader, criterion, args, device):
     
     return epoch_metrics
 
-def save_checkpoint(model, optimizer, epoch, metrics, args, is_best=False):
+def create_experiment_manifest(args, epoch, metrics):
     """
-    Save model checkpoint.
+    Create a lightweight JSON manifest with experiment metadata.
+    
+    Args:
+        args: Command line arguments
+        epoch: Current epoch
+        metrics: Training metrics
+        
+    Returns:
+        dict: Experiment manifest
+    """
+    import time
+    import subprocess
+    
+    # Get git commit hash if available
+    git_hash = "unknown"
+    try:
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            git_hash = result.stdout.strip()[:8]  # Short hash
+    except:
+        pass
+    
+    manifest = {
+        "experiment_name": args.exp_name,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "git_commit": git_hash,
+        "dataset": args.data,
+        "representation": args.repr,
+        "loss_function": args.loss,
+        "model_config": {
+            "hid_S": args.hid_S,
+            "hid_T": args.hid_T,
+            "N_S": args.N_S,
+            "N_T": args.N_T,
+            "model_type": args.model_type
+        },
+        "training_config": {
+            "learning_rate": args.lr,
+            "batch_size": args.batch_size,
+            "epochs": args.epochs,
+            "patience": args.patience,
+            "weight_decay": args.weight_decay
+        },
+        "data_config": {
+            "img_size": args.img_size,
+            "pre_seq_length": args.pre_seq_length,
+            "aft_seq_length": args.aft_seq_length,
+            "total_seq_length": args.total_seq_length
+        },
+        "final_epoch": epoch,
+        "final_metrics": metrics
+    }
+    
+    # Add loss-specific parameters
+    loss_params = {}
+    if hasattr(args, 'sigma') and args.sigma is not None:
+        loss_params['sigma'] = args.sigma
+    if hasattr(args, 'gamma') and args.gamma is not None:
+        loss_params['gamma'] = args.gamma
+    if hasattr(args, 'pos_weight') and args.pos_weight is not None:
+        loss_params['pos_weight'] = args.pos_weight
+    if hasattr(args, 'w_dir') and args.w_dir is not None:
+        loss_params['w_dir'] = args.w_dir
+    if hasattr(args, 'w_mag') and args.w_mag is not None:
+        loss_params['w_mag'] = args.w_mag
+    if hasattr(args, 'cosine_weight') and args.cosine_weight is not None:
+        loss_params['cosine_weight'] = args.cosine_weight
+    
+    if loss_params:
+        manifest["loss_params"] = loss_params
+    
+    return manifest
+
+def save_checkpoint(model, optimizer, epoch, metrics, args, is_best=False, best_val_loss=None):
+    """
+    Save model checkpoint and experiment manifest.
     
     Args:
         model (nn.Module): Model to save.
@@ -454,7 +510,8 @@ def save_checkpoint(model, optimizer, epoch, metrics, args, is_best=False):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'metrics': metrics,
-        'args': args
+        'args': args,
+        'best_val_loss': best_val_loss if best_val_loss is not None else metrics.get('loss', float('inf'))
     }
     
     # Save latest checkpoint
@@ -464,9 +521,14 @@ def save_checkpoint(model, optimizer, epoch, metrics, args, is_best=False):
     if epoch % args.save_freq == 0:
         torch.save(checkpoint, output_dir / f'checkpoint_epoch_{epoch}.pth')
     
-    # Save best checkpoint
+    # Save best checkpoint and manifest
     if is_best:
         torch.save(checkpoint, output_dir / 'best_checkpoint.pth')
+        
+        # Create and save experiment manifest
+        manifest = create_experiment_manifest(args, epoch, metrics)
+        with open(output_dir / 'experiment_manifest.json', 'w') as f:
+            json.dump(manifest, f, indent=2)
 
 def plot_metrics(train_metrics, val_metrics, args):
     """
@@ -529,73 +591,65 @@ def main():
     device = torch.device(args.device)
     print(f"Using device: {device}")
     
+    # Calculate sequence lengths from total length
+    args.pre_seq_length = int(args.total_seq_length * args.split_ratio)
+    args.aft_seq_length = args.total_seq_length - args.pre_seq_length
+    
+    print(f"Sequence configuration: total={args.total_seq_length}, input={args.pre_seq_length}, output={args.aft_seq_length}")
+    
     # Create data loaders
-    if args.data == 'eye_gauss':
-        # Create configuration for data generation
-        data_config = {
-            'grid_size': 32,
-            'sigma': 4.5,
-            'displacement_scale': 9.0,
-            'center_bias_strength': 0.55,
-            'random_exploration_scale': 0.65,
-            'short_step_ratio': 0.4,
-            'short_step_cov_range': (0.01, 0.15),
-            'long_step_cov_range': (10.0, 20.0),
-            'gaussian_sigma': args.sigma
-        }
-        
-        # Set default data path for eye_gauss if not provided
-        eye_gauss_data_path = args.data_path
-        if eye_gauss_data_path is None:
-            eye_gauss_data_path = 'experiments_refactored/data/position_dependent_gaussian'
-            
-        # For eye_gauss, always generate if data files don't exist
-        generate_data = args.generate_data
-        if not generate_data:
-            # Check if data files exist, if not, generate them
-            data_file_path = Path(eye_gauss_data_path) / "train_gaussian_data.pt"
-            if not data_file_path.exists():
-                print(f"Data files not found at {eye_gauss_data_path}, generating new data...")
-                generate_data = True
-        
+    if args.data == 'gauss':
+        # Determine representation for frame generation (align with geom_simple approach)
+        representation = 'sparse' if args.repr == 'pixel' else ('gaussian' if args.repr == 'heat' else 'coord')
         train_loader, val_loader, test_loader = create_position_dependent_gaussian_loaders(
             batch_size=args.batch_size,
-            data_path=eye_gauss_data_path,
-            generate=generate_data,
-            config=data_config
+            representation=representation,
+            generate=True  # Always generate for consistency
         )
     elif args.data == 'geom_simple':
+        # Determine representation for frame generation
+        representation = 'sparse' if args.repr == 'pixel' else ('gaussian' if args.repr == 'heat' else 'coord')
         train_loader, val_loader, test_loader = create_geom_simple_loaders(
             batch_size=args.batch_size,
-            num_samples=1000,
-            img_size=args.img_size,
-            sequence_length=20
+            sequence_length=args.total_seq_length,
+            representation=representation
         )
     else:
         raise ValueError(f"Unknown dataset: {args.data}")
     
     print(f"Created data loaders: {args.data}")
+
+    # Reconfigure DataLoaders with multiple workers if requested
+    if args.num_workers > 0:
+        from torch.utils.data import DataLoader  # Local import to avoid circular issues
+        pin = args.device in ('cuda', 'mps')
+        train_loader = DataLoader(train_loader.dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=pin)
+        val_loader = DataLoader(val_loader.dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=pin)
+        test_loader = DataLoader(test_loader.dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=pin)
+        print(f"DataLoader workers set to {args.num_workers}")
     try:
-        print(f"  Train: {len(train_loader.dataset)} samples")
+        print(f"  Train: {len(train_loader.dataset)} samples")  # type: ignore
     except (AttributeError, TypeError):
         print(f"  Train: unknown samples")
     try:
-        print(f"  Validation: {len(val_loader.dataset)} samples")
+        print(f"  Validation: {len(val_loader.dataset)} samples")  # type: ignore
     except (AttributeError, TypeError):
         print(f"  Validation: unknown samples")
     try:
-        print(f"  Test: {len(test_loader.dataset)} samples")
+        print(f"  Test: {len(test_loader.dataset)} samples")  # type: ignore
     except (AttributeError, TypeError):
         print(f"  Test: unknown samples")
     
     # Create model
     if args.model == 'simvp':
         # Determine input shape based on representation
-        in_shape = (8, 1, args.img_size, args.img_size)  # (T, C, H, W)
+        in_shape = (args.pre_seq_length, 1, args.img_size, args.img_size)  # (T, C, H, W)
+        out_shape = (args.aft_seq_length, 1, args.img_size, args.img_size)
         
         model = create_model(
             task=args.repr,
             in_shape=in_shape,
+            out_shape=out_shape,
             hid_S=args.hid_S,
             hid_T=args.hid_T,
             N_S=args.N_S,
@@ -609,18 +663,37 @@ def main():
     print(f"Created model: {args.model} for {args.repr} representation")
     
     # Create loss function
+    # Initialize loss_kwargs
     loss_kwargs = {}
     
     if args.loss == 'focal_bce':
-        loss_kwargs = {'alpha': args.alpha, 'gamma': args.gamma}
-    elif args.loss == 'weighted_bce':
-        loss_kwargs = {'pos_weight': args.pos_weight}
+        loss_kwargs.update({'alpha': args.alpha, 'gamma': args.gamma})
     elif args.loss == 'focal_tversky':
-        loss_kwargs = {'alpha': args.alpha, 'gamma': args.gamma}
+        loss_kwargs.update({'alpha': args.alpha, 'gamma': args.gamma})
     elif args.loss == 'huber':
-        loss_kwargs = {'delta': args.delta}
+        loss_kwargs.update({'delta': args.delta})
     elif args.loss == 'polar_decoupled':
-        loss_kwargs = {'direction_weight': args.w_dir, 'magnitude_weight': args.w_mag}
+        loss_kwargs.update({'direction_weight': args.w_dir, 'magnitude_weight': args.w_mag})
+    elif args.loss == 'kl':
+        # KL loss doesn't need additional parameters
+        pass
+    elif args.loss == 'mse':
+        # MSE loss doesn't need additional parameters
+        pass
+    elif args.loss == 'weighted_mse':
+        # Use sweep.yaml default if not specified
+        pos_weight = args.pos_weight if args.pos_weight != 1.0 else 200.0
+        loss_kwargs.update({'pos_weight': pos_weight})
+    elif args.loss == 'weighted_bce':
+        # Use sweep.yaml default if not specified
+        pos_weight = args.pos_weight if args.pos_weight != 1.0 else 2000.0
+        loss_kwargs.update({'pos_weight': pos_weight})
+    elif args.loss == 'dice_bce':
+        # Dice BCE uses default weights
+        pass
+    
+    # Add exp_name for temp loss identification
+    loss_kwargs['exp_name'] = args.exp_name
     
     criterion = get_loss(args.loss, **loss_kwargs)
     print(f"Created loss function: {args.loss}")
@@ -638,18 +711,48 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Created output directory: {output_dir}")
     
+    # Resume from checkpoint if specified
+    start_epoch = 1
+    train_metrics_history = []
+    val_metrics_history = []
+    best_val_loss = float('inf')
+    
+    if args.resume:
+        print(f"Resuming from checkpoint: {args.resume}")
+        checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
+        try:
+                model.load_state_dict(checkpoint['model_state_dict'])
+        except RuntimeError as e:
+            print(f"Checkpoint incompatibility: {e}\nLoading state dict with strict=False (partial load).")
+            _ = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        print(f"Resumed from epoch {start_epoch}")
+    else:
+        # Check for existing latest checkpoint
+        latest_checkpoint = output_dir / 'latest_checkpoint.pth'
+        if latest_checkpoint.exists():
+            print(f"Found existing checkpoint, resuming from: {latest_checkpoint}")
+            checkpoint = torch.load(latest_checkpoint, map_location=device, weights_only=False)
+            try:
+                model.load_state_dict(checkpoint['model_state_dict'])
+            except RuntimeError as e:
+                print(f"Checkpoint incompatibility: {e}\nLoading state dict with strict=False (partial load).")
+                _ = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            print(f"Resumed from epoch {start_epoch}")
+    
     # Save arguments
     with open(output_dir / 'args.json', 'w') as f:
         json.dump(vars(args), f, indent=4)
     
     # Train model
-    print(f"Starting training for {args.epochs} epochs...")
+    print(f"Starting training from epoch {start_epoch} for {args.epochs} epochs...")
     
-    train_metrics_history = []
-    val_metrics_history = []
-    best_val_loss = float('inf')
-    
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         start_time = time.time()
         
         # Train and validate
@@ -666,7 +769,7 @@ def main():
             best_val_loss = val_metrics['loss']
         
         # Save checkpoint
-        save_checkpoint(model, optimizer, epoch, val_metrics, args, is_best)
+        save_checkpoint(model, optimizer, epoch, val_metrics, args, is_best, best_val_loss)
         
         # Plot metrics
         plot_metrics(train_metrics_history, val_metrics_history, args)

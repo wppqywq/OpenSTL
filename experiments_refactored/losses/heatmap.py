@@ -34,6 +34,53 @@ class MSELoss(nn.Module):
         """
         return self.mse(pred, target)
 
+class WeightedMSELoss(nn.Module):
+    """
+    Weighted MSE Loss for heatmap regression with class imbalance.
+    
+    Applies higher weight to positive (non-zero) regions in heatmaps.
+    """
+    
+    def __init__(self, pos_weight=50.0, reduction='mean'):
+        """
+        Initialize the WeightedMSELoss.
+        
+        Args:
+            pos_weight (float): Weight for positive (non-zero) regions.
+            reduction (str): Reduction method ('mean', 'sum', 'none').
+        """
+        super().__init__()
+        self.pos_weight = pos_weight
+        self.reduction = reduction
+        
+    def forward(self, pred, target):
+        """
+        Forward pass.
+        
+        Args:
+            pred (torch.Tensor): Predicted heatmap.
+            target (torch.Tensor): Target heatmap.
+            
+        Returns:
+            torch.Tensor: Loss value.
+        """
+        # Calculate MSE
+        mse = (pred - target) ** 2
+        
+        # Create weight mask: pos_weight for non-zero targets, 1.0 for zero targets
+        weight_mask = torch.where(target > 0, self.pos_weight, 1.0)
+        
+        # Apply weights
+        weighted_mse = mse * weight_mask
+        
+        # Apply reduction
+        if self.reduction == 'mean':
+            return weighted_mse.mean()
+        elif self.reduction == 'sum':
+            return weighted_mse.sum()
+        else:  # 'none'
+            return weighted_mse
+
 class KLDivergenceLoss(nn.Module):
     """
     Kullback-Leibler Divergence Loss for heatmap regression.
@@ -66,23 +113,26 @@ class KLDivergenceLoss(nn.Module):
         Returns:
             torch.Tensor: Loss value.
         """
-        # Normalize target and prediction to sum to 1
-        # This ensures they are proper probability distributions
+        # CRITICAL: Ensure both heatmaps are proper probability distributions (sum to 1)
         
-        # Handle zero-sum case for target
-        target_sum = target.sum(dim=(2, 3), keepdim=True)
-        target_sum = torch.where(target_sum == 0, torch.ones_like(target_sum), target_sum)
-        target_normalized = target / target_sum
+        # Force positive values and add stability epsilon
+        pred_pos = torch.clamp(pred, min=0) + self.eps
+        target_pos = torch.clamp(target, min=0) + self.eps
         
-        # Handle zero-sum case for prediction
-        pred_sum = pred.sum(dim=(2, 3), keepdim=True)
-        pred_sum = torch.where(pred_sum == 0, torch.ones_like(pred_sum), pred_sum)
-        pred_normalized = pred / pred_sum
+        # Normalize to ensure sum = 1 over spatial dimensions
+        pred_sum = pred_pos.sum(dim=(2, 3), keepdim=True)
+        target_sum = target_pos.sum(dim=(2, 3), keepdim=True)
         
-        # Apply log to prediction for KL divergence
-        log_pred = torch.log(pred_normalized + self.eps)
+        pred_normalized = pred_pos / pred_sum
+        target_normalized = target_pos / target_sum
         
-        # Calculate KL divergence
+        # Verify sums are 1 (debug assertion)
+        # assert torch.allclose(pred_normalized.sum(dim=(2,3)), torch.ones_like(pred_sum.squeeze()))
+        
+        # Apply log to prediction for KL divergence  
+        log_pred = torch.log(pred_normalized)
+        
+        # Calculate KL divergence: KL(target || pred) = sum(target * log(target/pred))
         return self.kl_div(log_pred, target_normalized)
 
 class EarthMoverDistanceLoss(nn.Module):

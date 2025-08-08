@@ -1,22 +1,22 @@
-from experiments_refactored.losses.factory import (
+from .factory import (
     get_loss,
     get_loss_for_representation,
     get_all_losses_for_representation
 )
 
-from experiments_refactored.losses.focal_bce import (
+from .focal_bce import (
     FocalBCELoss,
     WeightedBCELoss,
     FocalTverskyLoss
 )
 
-from experiments_refactored.losses.heatmap import (
+from .heatmap import (
     MSELoss,
     KLDivergenceLoss,
     EarthMoverDistanceLoss
 )
 
-from experiments_refactored.losses.vector import (
+from .vector import (
     HuberLoss,
     PolarDecoupledLoss,
     UncertaintyWeightedLoss

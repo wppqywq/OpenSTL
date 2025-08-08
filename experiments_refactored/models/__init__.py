@@ -1,4 +1,4 @@
-from experiments_refactored.models.simvp_base import (
+from .simvp_base import (
     SimVPWithTaskHead,
     create_model
 )

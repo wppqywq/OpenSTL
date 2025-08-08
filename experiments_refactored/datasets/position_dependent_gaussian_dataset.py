@@ -27,7 +27,7 @@ from .position_dependent_gaussian import (
 # Default parameters
 DEFAULT_IMG_SIZE = 32
 DEFAULT_SEQUENCE_LENGTH = 20
-TRAIN_SIZE = 1000
+TRAIN_SIZE = 2500
 VAL_SIZE = 100
 TEST_SIZE = 100
 
@@ -75,7 +75,7 @@ class PositionDependentGaussianDataset(Dataset):
         else:
             # Set default data path if not provided
             if data_path is None:
-                data_path = Path("../data/position_dependent_gaussian")
+                data_path = Path("data/position_dependent_gaussian")
             else:
                 data_path = Path(data_path)
             
@@ -144,7 +144,7 @@ class DatasetGenerator:
         
         # Output directory
         if output_dir is None:
-            output_dir = Path("../data/position_dependent_gaussian")
+            output_dir = Path("data/position_dependent_gaussian")
         self.output_dir = Path(output_dir)
         
         # Ensure directories exist

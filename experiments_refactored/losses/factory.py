@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
-from experiments_refactored.losses.focal_bce import FocalBCELoss, WeightedBCELoss, FocalTverskyLoss
-from experiments_refactored.losses.heatmap import MSELoss, KLDivergenceLoss, EarthMoverDistanceLoss
-from experiments_refactored.losses.vector import HuberLoss, PolarDecoupledLoss, UncertaintyWeightedLoss
+from .focal_bce import FocalBCELoss, WeightedBCELoss, FocalTverskyLoss
+from .heatmap import MSELoss, WeightedMSELoss, KLDivergenceLoss
+from .vector import HuberLoss, PolarDecoupledLoss, UncertaintyWeightedLoss
+from .dice_bce import DiceBCELoss
+from .emd import EarthMoverDistanceLoss
 
 def get_loss(name, **kwargs):
     """
@@ -44,6 +46,12 @@ def get_loss(name, **kwargs):
         return MSELoss(
             reduction=kwargs.get('reduction', 'mean')
         )
+    elif name == 'weighted_mse':
+        return WeightedMSELoss(
+            pos_weight=kwargs.get('pos_weight', 50.0),
+            reduction=kwargs.get('reduction', 'mean')
+        )
+
     elif name == 'kl':
         return KLDivergenceLoss(
             reduction=kwargs.get('reduction', 'batchmean'),
@@ -79,6 +87,14 @@ def get_loss(name, **kwargs):
         return nn.MSELoss(reduction=kwargs.get('reduction', 'mean'))
     elif name == 'smooth_l1':
         return nn.SmoothL1Loss(beta=kwargs.get('beta', 1.0), reduction=kwargs.get('reduction', 'mean'))
+    
+    # New loss functions
+    elif name == 'dice_bce':
+        return DiceBCELoss(
+            dice_weight=kwargs.get('dice_weight', 0.5),
+            bce_weight=kwargs.get('bce_weight', 0.5),
+            reduction=kwargs.get('reduction', 'mean')
+        )
     
     else:
         raise ValueError(f"Unknown loss function: {name}")
@@ -123,11 +139,13 @@ def get_all_losses_for_representation(representation):
         return {
             'weighted_bce': get_loss('weighted_bce'),
             'focal_bce': get_loss('focal_bce'),
-            'focal_tversky': get_loss('focal_tversky')
+            'focal_tversky': get_loss('focal_tversky'),
+            'dice_bce': get_loss('dice_bce')
         }
     elif representation == 'heat':
         return {
             'mse': get_loss('mse'),
+            'weighted_mse': get_loss('weighted_mse'),
             'kl': get_loss('kl'),
             'emd': get_loss('emd')
         }
@@ -135,7 +153,8 @@ def get_all_losses_for_representation(representation):
         return {
             'huber': get_loss('huber'),
             'polar_decoupled': get_loss('polar_decoupled'),
-            'uncertainty_weighted': get_loss('uncertainty_weighted')
+            'uncertainty_weighted': get_loss('uncertainty_weighted'),
         }
     else:
-        raise ValueError(f"Unknown representation: {representation}") 
+        raise ValueError(f"Unknown representation: {representation}")
+

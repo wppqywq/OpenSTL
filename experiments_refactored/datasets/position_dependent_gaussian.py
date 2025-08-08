@@ -18,21 +18,18 @@ import torch
 import math
 import numpy as np
 from pathlib import Path
+from .constants import FIELD_CONFIG, IMG_SIZE, RANDOM_SEED
+
+# Set random seeds for reproducibility
+torch.manual_seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
 
 # Default configuration
 DEFAULT_CONFIG = {
-    'grid_size': 32,
-    'sigma': 4.5,
-    'displacement_scale': 8.0,
-    'center_bias_strength': 0.55,
-    'random_exploration_scale': 0.65,
-    'short_step_ratio': 0.4,
-    'short_step_cov_range': (0.2, 1.5),  # Modified: more reasonable values
-    'long_step_cov_range': (4.0, 6.0),   # Modified: more reasonable values
-    'short_step_lambda_ratio': 0.4,      # lambda2/lambda1 for short steps (0.4 = more elliptical)
-    'long_step_lambda_ratio': 0.2,       # lambda2/lambda1 for long steps (0.2 = more elliptical)
-    'max_attempts': 5,  # Maximum attempts for resampling when hitting boundaries
-    'orientation_type': 'center_directed'  # Options: 'random', 'center_directed', 'boundary_tangent'
+    'grid_size': FIELD_CONFIG['grid_size'],
+    'sigma': FIELD_CONFIG['sigma_start'],
+    'displacement_scale': FIELD_CONFIG['displacement_scale'],
+    'max_attempts': 5,
 }
 
 def build_cov_matrix(theta, lambda1, lambda2):
@@ -55,6 +52,81 @@ def build_cov_matrix(theta, lambda1, lambda2):
     ])
     Lambda = torch.diag(torch.tensor([lambda1, lambda2]))
     return R @ Lambda @ R.T  # shape: (2, 2)
+
+def init_covariance_field(grid_size, img_size):
+    """
+    Initialize a structured covariance field based on position-dependent rules.
+    
+    Args:
+        grid_size (int): Size of the parameter grid
+        img_size (int): Size of the image
+        
+    Returns:
+        tuple: (theta_field, lambda1_field, lambda2_field) each of shape (grid_size, grid_size)
+    """
+    theta_field = torch.zeros(grid_size, grid_size)
+    lambda1_field = torch.zeros(grid_size, grid_size)
+    lambda2_field = torch.zeros(grid_size, grid_size)
+    
+    # Create coordinate grids
+    y_coords = torch.linspace(0, img_size, grid_size)
+    x_coords = torch.linspace(0, img_size, grid_size)
+    yv, xv = torch.meshgrid(y_coords, x_coords, indexing='ij')
+    
+    # Center coordinates
+    center_y, center_x = img_size / 2.0, img_size / 2.0
+    
+    # Distance from center (normalized by max possible distance)
+    distance_from_center = torch.sqrt((yv - center_y)**2 + (xv - center_x)**2)
+    max_distance = torch.sqrt(torch.tensor((img_size/2)**2 + (img_size/2)**2))
+    normalized_distance = distance_from_center / max_distance
+    
+    for gy in range(grid_size):
+        for gx in range(grid_size):
+            y, x = yv[gy, gx], xv[gy, gx]
+            dist_norm = normalized_distance[gy, gx]
+            
+            # Determine region and set parameters accordingly
+            if dist_norm < FIELD_CONFIG['center_threshold']:
+                # Center region: isotropic (random)
+                theta_field[gy, gx] = torch.rand(1).item() * 2 * math.pi
+                lambda1_field[gy, gx] = FIELD_CONFIG['center_lambda1']
+                lambda2_field[gy, gx] = FIELD_CONFIG['center_lambda2']
+                
+            elif dist_norm > FIELD_CONFIG['corner_threshold']:
+                # Corner regions: toward center
+                dy, dx = center_y - y, center_x - x
+                theta_field[gy, gx] = math.atan2(dy, dx)
+                lambda1_field[gy, gx] = FIELD_CONFIG['corner_lambda1']
+                lambda2_field[gy, gx] = FIELD_CONFIG['corner_lambda2']
+                
+            elif dist_norm > FIELD_CONFIG['edge_threshold']:
+                # Edge regions: along the border (tangential)
+                dy, dx = center_y - y, center_x - x
+                center_angle = math.atan2(dy, dx)
+                theta_field[gy, gx] = center_angle + math.pi/2  # Perpendicular to center direction
+                lambda1_field[gy, gx] = FIELD_CONFIG['edge_lambda1']
+                lambda2_field[gy, gx] = FIELD_CONFIG['edge_lambda2']
+                
+            else:
+                # Quadrant regions: rotating patterns (CW/CCW)
+                y_norm, x_norm = (y - center_y) / (img_size/2), (x - center_x) / (img_size/2)
+                
+                # Determine quadrant and rotation direction
+                if y_norm > 0 and x_norm > 0:  # Top-right: CW
+                    base_angle = math.atan2(-x_norm, y_norm)  # Clockwise rotation
+                elif y_norm > 0 and x_norm < 0:  # Top-left: CCW
+                    base_angle = math.atan2(x_norm, y_norm)  # Counter-clockwise rotation
+                elif y_norm < 0 and x_norm < 0:  # Bottom-left: CW
+                    base_angle = math.atan2(-x_norm, y_norm)  # Clockwise rotation
+                else:  # Bottom-right: CCW
+                    base_angle = math.atan2(x_norm, y_norm)  # Counter-clockwise rotation
+                
+                theta_field[gy, gx] = base_angle
+                lambda1_field[gy, gx] = FIELD_CONFIG['quadrant_lambda1']
+                lambda2_field[gy, gx] = FIELD_CONFIG['quadrant_lambda2']
+    
+    return theta_field, lambda1_field, lambda2_field
 
 def get_orientation_angle(pos, img_size, orientation_type):
     """
@@ -89,12 +161,67 @@ def get_orientation_angle(pos, img_size, orientation_type):
         # Make tangent by adding π/2
         return angle_to_center + math.pi/2
     
+    elif orientation_type == 'structured_field':
+        # Structured field with strong directional preferences
+        y_norm, x_norm = (y - center) / center, (x - center) / center
+        dist_from_center = math.sqrt(y_norm**2 + x_norm**2)
+        
+        # Define regions with clearer boundaries
+        edge_threshold = 0.7  # Distance from center to be considered "edge"
+        corner_threshold = 0.85  # Distance from center to be considered "corner"
+        
+        # Corner regions: ALWAYS toward center (no randomness)
+        if dist_from_center > corner_threshold:
+            dy, dx = center - y, center - x
+            return math.atan2(dy, dx)
+        
+        # Edge regions: mix of toward center and tangential
+        elif dist_from_center > edge_threshold:
+            dy, dx = center - y, center - x
+            center_angle = math.atan2(dy, dx)
+            # 70% toward center, 30% tangential
+            if hash((int(x*10), int(y*10))) % 10 < 7:
+                return center_angle  # Toward center
+            else:
+                return center_angle + math.pi/2  # Tangential
+        
+        # Center region: weak center bias (not random)
+        elif dist_from_center < 0.2:
+            dy, dx = center - y, center - x
+            center_angle = math.atan2(dy, dx)
+            # Add small random perturbation but still generally toward center
+            perturbation = (hash((int(x*100), int(y*100))) % 360 - 180) * math.pi / 180 * 0.5
+            return center_angle + perturbation
+        
+        # Quadrant regions: strong toward center with slight rotation
+        else:
+            dy, dx = center - y, center - x
+            center_angle = math.atan2(dy, dx)
+            
+            # Add quadrant-specific rotation bias
+            if y_norm > 0 and x_norm > 0:  # Top-right: slight CW bias
+                rotation_bias = -math.pi/6  # -30 degrees
+            elif y_norm > 0 and x_norm < 0:  # Top-left: slight CCW bias
+                rotation_bias = math.pi/6   # +30 degrees
+            elif y_norm < 0 and x_norm < 0:  # Bottom-left: slight CW bias
+                rotation_bias = -math.pi/6  # -30 degrees
+            else:  # Bottom-right: slight CCW bias
+                rotation_bias = math.pi/6   # +30 degrees
+            
+            return center_angle + rotation_bias
+    
     # Default: random orientation
     return torch.rand(1).item() * 2 * math.pi
 
 def sample_position_dependent_gaussian(batch_size, sequence_length, img_size, config=None):
     """
-    Sample spatial coordinates using position-dependent Gaussian distribution.
+    Sample spatial coordinates using structured position-dependent Gaussian field.
+    
+    Each location has a covariance matrix that encodes directional preference:
+    - Corners: toward center (strong directional bias)
+    - Edges: along border (consistent low-entropy movement)
+    - Center: isotropic (high uncertainty)
+    - Quadrants: rotating patterns (CW/CCW spatial variation)
     
     Args:
         batch_size (int): Number of sequences to generate.
@@ -110,112 +237,49 @@ def sample_position_dependent_gaussian(batch_size, sequence_length, img_size, co
     
     coords = torch.zeros(batch_size, sequence_length, 2)
     
-    # Create position-dependent parameter grid
+    # Initialize structured covariance field
     grid_size = config.get('grid_size', 32)
-    y_grid = torch.linspace(0, img_size, grid_size)
-    x_grid = torch.linspace(0, img_size, grid_size)
-    yv, xv = torch.meshgrid(y_grid, x_grid, indexing='ij')
+    theta_field, lambda1_field, lambda2_field = init_covariance_field(grid_size, img_size)
     
-    # Center coordinates
-    center_y, center_x = img_size / 2.0, img_size / 2.0
-    
-    # Distance from center for each grid point
-    distance_from_center = torch.sqrt((yv - center_y)**2 + (xv - center_x)**2)
-    max_distance = torch.sqrt(torch.tensor((img_size/2)**2 + (img_size/2)**2))
-    normalized_distance = distance_from_center / max_distance
-    
-    # Create bimodal covariance distribution
-    short_step_ratio = config.get('short_step_ratio', 0.4)
-    short_step_mask = torch.rand(grid_size, grid_size) < short_step_ratio
-    
-    # Initialize primary and secondary eigenvalues for covariance matrices
-    # lambda1: Major axis variance (larger value = more spread in that direction)
-    # lambda2: Minor axis variance (smaller value = more elliptical shape)
-    # Ratio lambda2/lambda1 controls ellipticity: closer to 1 = more circular, closer to 0 = more elliptical
-    lambda1 = torch.zeros(grid_size, grid_size)
-    lambda2 = torch.zeros(grid_size, grid_size)
-    
-    # Short steps
-    short_step_cov_range = config.get('short_step_cov_range', (0.2, 1.5))
-    short_lambda1 = torch.rand(grid_size, grid_size) * (
-        short_step_cov_range[1] - short_step_cov_range[0]) + short_step_cov_range[0]
-    # Make more elliptical by reducing lambda2 relative to lambda1
-    short_lambda2 = short_lambda1 * config.get('short_step_lambda_ratio', 0.4)
-    
-    lambda1[short_step_mask] = short_lambda1[short_step_mask]
-    lambda2[short_step_mask] = short_lambda2[short_step_mask]
-    
-    # Long steps
-    long_step_cov_range = config.get('long_step_cov_range', (4.0, 6.0))
-    long_lambda1 = torch.rand(grid_size, grid_size) * (
-        long_step_cov_range[1] - long_step_cov_range[0]) + long_step_cov_range[0]
-    # Make more elliptical by reducing lambda2 relative to lambda1
-    long_lambda2 = long_lambda1 * config.get('long_step_lambda_ratio', 0.3)
-    
-    lambda1[~short_step_mask] = long_lambda1[~short_step_mask]
-    lambda2[~short_step_mask] = long_lambda2[~short_step_mask]
-    
-    # Generate sequences
-    sigma = config.get('sigma', 4.5)
-    displacement_scale = config.get('displacement_scale', 9.0)
-    center_bias_strength = config.get('center_bias_strength', 0.55)
-    random_exploration_scale = config.get('random_exploration_scale', 0.65)
-    orientation_type = config.get('orientation_type', 'center_directed')
+    # Parameters
+    sigma = config.get('sigma', 2.0)
+    displacement_scale = config.get('displacement_scale', 3.0)
     max_attempts = config.get('max_attempts', 5)
     
     for b in range(batch_size):
-        # Start near center
+        # Start near center with Gaussian spread
         image_center = torch.tensor([img_size / 2.0, img_size / 2.0])
         coords[b, 0] = torch.normal(image_center, sigma)
+        # Clamp to valid bounds
+        coords[b, 0] = torch.clamp(coords[b, 0], 0, img_size - 1)
         
         for t in range(1, sequence_length):
             current_pos = coords[b, t-1]
             
-            # Find nearest grid point
+            # Find nearest grid point for covariance lookup
             grid_y = torch.clamp(torch.round(current_pos[0] * (grid_size-1) / img_size).long(), 0, grid_size-1)
             grid_x = torch.clamp(torch.round(current_pos[1] * (grid_size-1) / img_size).long(), 0, grid_size-1)
             
-            # Get eigenvalues for this position
-            lambda1_pos = lambda1[grid_y, grid_x]
-            lambda2_pos = lambda2[grid_y, grid_x]
+            # Get covariance parameters for this position
+            theta_pos = theta_field[grid_y, grid_x]
+            lambda1_pos = lambda1_field[grid_y, grid_x]
+            lambda2_pos = lambda2_field[grid_y, grid_x]
             
-            # Get orientation angle for this position
-            theta = get_orientation_angle(current_pos, img_size, orientation_type)
+            # Build covariance matrix
+            cov_matrix = build_cov_matrix(theta_pos, lambda1_pos, lambda2_pos)
             
-            # Build the covariance matrix with orientation
-            cov_matrix = build_cov_matrix(theta, lambda1_pos, lambda2_pos)
-            
-            # Center-biased displacement
-            center_direction = torch.tensor([center_y, center_x]) - current_pos
-            center_direction = center_direction / (torch.norm(center_direction) + 1e-8)
-            
-            # Random exploration component
-            random_direction = torch.randn(2)
-            random_direction = random_direction / (torch.norm(random_direction) + 1e-8)
-            
-            # Combine directions
-            displacement_direction = (center_bias_strength * center_direction + 
-                                   random_exploration_scale * random_direction)
-            displacement_direction = displacement_direction / (torch.norm(displacement_direction) + 1e-8)
-            
-            # Sample directly from multivariate normal with proper covariance matrix
-            # Loop to handle boundary constraints with resampling
+            # Sample displacement from 2D multivariate normal
             valid_position = False
             attempts = 0
             
-            # Initialize displacement with a default value
-            displacement = torch.distributions.MultivariateNormal(
-                torch.zeros(2), cov_matrix).sample() * displacement_scale
-            
             while not valid_position and attempts < max_attempts:
-                # Sample from multivariate normal
-                displacement = torch.distributions.MultivariateNormal(
-                    torch.zeros(2), cov_matrix).sample() * displacement_scale
+                # Sample displacement from the structured covariance
+                displacement_raw = torch.distributions.MultivariateNormal(
+                    torch.zeros(2), cov_matrix
+                ).sample()
                 
-                # Apply center bias and random exploration components
-                bias_factor = torch.dot(displacement, displacement_direction) / (torch.norm(displacement) + 1e-8)
-                bias_adjustment = 0.2 * bias_factor  # Subtle influence to preferred direction
-                displacement = displacement * (1 + bias_adjustment)
+                # Scale displacement
+                displacement = displacement_raw * displacement_scale
                 
                 # Check if new position is within bounds
                 new_pos = current_pos + displacement
@@ -223,11 +287,16 @@ def sample_position_dependent_gaussian(batch_size, sequence_length, img_size, co
                     valid_position = True
                     coords[b, t] = new_pos
                 else:
+                    # Reduce displacement scale and try again
+                    displacement_scale *= 0.8
                     attempts += 1
             
             # If no valid position found after max attempts, clamp to image bounds
             if not valid_position:
                 coords[b, t] = torch.clamp(current_pos + displacement, 0, img_size - 1)
+            
+            # Reset displacement scale for next step
+            displacement_scale = config.get('displacement_scale', 3.0)
     
     return coords.to(torch.float32)
 
