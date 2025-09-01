@@ -170,10 +170,7 @@ figs
 
 # Experiments directory specific ignores
 experiments/**/logs/
-experiments/**/models/
 experiments/**/data/
-experiments/**/data_patterns/
-experiments/**/datasets/
 experiments/**/results/
 experiments/**/*.log
 experiments/**/*.pkl
