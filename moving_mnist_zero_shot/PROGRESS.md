@@ -28,6 +28,7 @@
   - Generated MSE and PSNR temporal evolution plots
   - Output: `moving_mnist_zero_shot/results/eval/error_vs_time.png`
 
-### Next
-- Add frame-level metrics (MSE/PSNR) vs. original frames for baseline variant
-- Plot error-vs-time summaries; then integrate model baselines (SimVP, PredRNN++) zero-shot
+### Next  
+- Integrate model baselines (SimVP, PredRNN++) zero-shot - requires matching checkpoint architecture config
+- Run fast motion stress experiments and space-dependent dynamics experiments
+- Long-horizon rollout to T=100/200
