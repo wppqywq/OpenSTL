@@ -13,6 +13,10 @@ PATCH_THRESHOLD = 200
 PATCH_USE_OTSU = False
 PATCH_MORPH_OPEN = True
 PATCH_MIN_AREA = 10
+PATCH_MAX_COMPONENTS = 2
+PATCH_SAVE_OVERLAYS = True
+PATCH_SAMPLE_SEQUENCES = 10
+PATCH_FRAMES_PER_SEQUENCE = 3
 
 # Motion controller parameters
 MOTION_MODE = "baseline"  # baseline | fast | center_speed | center_direction
