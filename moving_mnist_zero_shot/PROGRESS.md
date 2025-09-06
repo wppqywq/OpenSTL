@@ -24,6 +24,9 @@
   - Computed MSE/PSNR for first 5 sequences
   - Result: avg PSNR ~4-7 dB (expected difference due to re-rendering from patches)
   - Output: `moving_mnist_zero_shot/results/eval/frame_metrics.json`
+- Error-vs-time plots
+  - Generated MSE and PSNR temporal evolution plots
+  - Output: `moving_mnist_zero_shot/results/eval/error_vs_time.png`
 
 ### Next
 - Add frame-level metrics (MSE/PSNR) vs. original frames for baseline variant
