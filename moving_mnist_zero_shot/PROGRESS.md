@@ -32,18 +32,8 @@
   - Generated 10 sequences per variant  
   - Trajectory analysis shows near-zero speed errors (machine precision)
   - Output: `moving_mnist_zero_shot/results/eval/all_variants_analysis.json`
-- Model baseline evaluation completed
-  - Three methods tested: copy-last, linear extrapolation, mean-context
-  - Copy-last performs best (avg MSE=7.62) vs linear (5239) and mean (5697)
-  - Results show expected patterns: higher speed/variation → higher error
-  - Output: `moving_mnist_zero_shot/results/eval/comprehensive_baseline_results.json`
-
-### Key Findings
-- **Motion impact**: Fast motion (s=1.5) shows higher error than baseline
-- **Field effects**: Center-direction shows moderate error increase
-- **Best baseline**: Copy-last frame consistently outperforms other simple baselines
 
 ### Next  
-- Long-horizon rollout to T=100/200 to analyze error accumulation
-- Generate summary tables and plots for paper
-- Complete reproducibility documentation
+- Train and evaluate actual models (SimVP, PredRNN++) on variants
+- Long-horizon rollout experiments
+- Generate summary tables for paper
