@@ -28,7 +28,12 @@
   - Generated MSE and PSNR temporal evolution plots
   - Output: `moving_mnist_zero_shot/results/eval/error_vs_time.png`
 
+- Fast motion variants generated (s=2.0, s=3.0)
+  - Generated 10 sequences per variant  
+  - Trajectory analysis shows near-zero speed errors (machine precision)
+  - Output: `moving_mnist_zero_shot/results/eval/all_variants_analysis.json`
+
 ### Next  
 - Integrate model baselines (SimVP, PredRNN++) zero-shot - requires matching checkpoint architecture config
-- Run fast motion stress experiments and space-dependent dynamics experiments
+- Compute frame-level metrics for all new variants
 - Long-horizon rollout to T=100/200

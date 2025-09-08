@@ -128,7 +128,7 @@ def run_variant(mode: str, variant_name, grouped: Dict[int, Dict[int, Dict]], T_
     # Choose sequences present in manifest (keys of grouped)
     seq_ids = sorted(grouped.keys())
     # For speed, limit to first S sequences in manifest
-    S = min(cfg.PATCH_SAMPLE_SEQUENCES, len(seq_ids))
+    S = min(cfg.MOTION_SAMPLE_SEQUENCES, len(seq_ids))
     seq_ids = seq_ids[:S]
 
     v0 = float(cfg.MOTION_BASE_SPEED)
