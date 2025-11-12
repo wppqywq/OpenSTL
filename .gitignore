@@ -6,7 +6,7 @@ __pycache__/
 **/*.png
 **/*.jpg
 **/*.jpeg
-**/*.gif
+# **/*.gif
 **/*.bmp
 **/*.tiff
 **/*.webp
@@ -31,6 +31,7 @@ __pycache__/
 **/*.tsx
 **/*.jsx
 **/*.tsx
+**/*.npy
 
 # C extensions
 *.so
@@ -165,18 +166,3 @@ figs
 .vscode
 .ipynb_checkpoints
 
-
-
-
-# Experiments directory specific ignores
-experiments/**/logs/
-experiments/**/data/
-experiments/**/results/
-experiments/**/*.log
-experiments/**/*.pkl
-experiments/**/*.npy
-experiments/**/*.h5
-experiments/**/*.hdf5
-experiments/**/*.ckpt
-experiments/**/*.pth
-experiments/**/*.pt
