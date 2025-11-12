@@ -1,20 +1,39 @@
 import json
 from torch import optim
 
-from timm.optim.adafactor import Adafactor
-from timm.optim.adahessian import Adahessian
-from timm.optim.adamp import AdamP
-from timm.optim.lookahead import Lookahead
-from timm.optim.nadam import Nadam
-from timm.optim.nvnovograd import NvNovoGrad
-from timm.optim.radam import RAdam
-from timm.optim.rmsprop_tf import RMSpropTF
-from timm.optim.sgdp import SGDP
+try:
+    from timm.optim.adafactor import Adafactor
+    from timm.optim.adahessian import Adahessian
+    from timm.optim.adamp import AdamP
+    from timm.optim.lookahead import Lookahead
+    from timm.optim.nadam import Nadam
+    from timm.optim.nvnovograd import NvNovoGrad
+    from timm.optim.radam import RAdam
+    from timm.optim.rmsprop_tf import RMSpropTF
+    from timm.optim.sgdp import SGDP
+except ImportError:
+    # Fallback for newer timm versions or missing optimizers
+    from torch.optim import AdamW as AdamP
+    from torch.optim import NAdam as Nadam
+    from torch.optim import RAdam
+    from torch.optim import RMSprop as RMSpropTF
+    from torch.optim import SGD as SGDP
+    Adafactor = None
+    Adahessian = None
+    Lookahead = None
+    NvNovoGrad = None
 
-from timm.scheduler.cosine_lr import CosineLRScheduler
-from timm.scheduler.multistep_lr import MultiStepLRScheduler
-from timm.scheduler.step_lr import StepLRScheduler
-from timm.scheduler.tanh_lr import TanhLRScheduler
+try:
+    from timm.scheduler.cosine_lr import CosineLRScheduler
+    from timm.scheduler.multistep_lr import MultiStepLRScheduler
+    from timm.scheduler.step_lr import StepLRScheduler
+    from timm.scheduler.tanh_lr import TanhLRScheduler
+except ImportError:
+    # Use torch native schedulers as fallback
+    from torch.optim.lr_scheduler import CosineAnnealingLR as CosineLRScheduler
+    from torch.optim.lr_scheduler import MultiStepLR as MultiStepLRScheduler
+    from torch.optim.lr_scheduler import StepLR as StepLRScheduler
+    TanhLRScheduler = None
 
 from .optim_constant import optim_parameters
 

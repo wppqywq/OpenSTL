@@ -246,8 +246,32 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
         ssim = 0
         for b in range(pred.shape[0]):
             for f in range(pred.shape[1]):
-                ssim += cal_ssim(pred[b, f].swapaxes(0, 2),
-                                 true[b, f].swapaxes(0, 2), multichannel=True)
+                # Handle both grayscale and RGB images
+                pred_frame = pred[b, f]
+                true_frame = true[b, f]
+                
+                # Check if format is (C, H, W) and convert to (H, W, C)
+                if len(pred_frame.shape) == 3 and pred_frame.shape[0] < pred_frame.shape[1]:
+                    # Likely (C, H, W) format
+                    pred_frame = pred_frame.transpose(1, 2, 0)
+                    true_frame = true_frame.transpose(1, 2, 0)
+                
+                if pred_frame.shape[-1] == 1:
+                    # Grayscale: squeeze the channel dimension
+                    pred_frame = pred_frame.squeeze(-1)
+                    true_frame = true_frame.squeeze(-1)
+                    ssim += cal_ssim(pred_frame, true_frame, data_range=1.0)
+                else:
+                    # RGB: use multichannel
+                    # For RGB images with shape (H, W, C), pass directly
+                    try:
+                        # New API (scikit-image >= 0.19)
+                        ssim += cal_ssim(pred_frame, true_frame, 
+                                         channel_axis=-1, data_range=1.0)
+                    except TypeError:
+                        # Old API (scikit-image < 0.19)
+                        ssim += cal_ssim(pred_frame, true_frame, 
+                                         multichannel=True, data_range=1.0)
         eval_res['ssim'] = ssim / (pred.shape[0] * pred.shape[1])
 
     if 'psnr' in metrics:
