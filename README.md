@@ -30,7 +30,8 @@
 [🚀Model Zoo](docs/en/model_zoos/video_benchmarks.md) |
 [🤗Huggingface](https://huggingface.co/OpenSTL) |
 [👀Visualization](docs/en/visualization/video_visualization.md) |
-[🆕News](docs/en/changelog.md)
+[🆕News](docs/en/changelog.md) |
+[Contributions Overview From Youyou Yang](./README_contrib.md)
 
 ## Introduction
 
