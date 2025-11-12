@@ -31,7 +31,7 @@
 [🤗Huggingface](https://huggingface.co/OpenSTL) |
 [👀Visualization](docs/en/visualization/video_visualization.md) |
 [🆕News](docs/en/changelog.md) |
-[✅Contributions Overview From Youyou Yang](./README_contrib.md)
+[Contributions Overview From Youyou Yang](./README_contrib.md)
 
 ## Introduction
 
